@@ -52,6 +52,8 @@ Chuyển cảnh và whoosh chỉ xảy ra ở chỗ chuyển giữa **hai clip k
 
 - Mỗi dòng là một câu. Viết số bằng chữ khi đọc; muốn phụ đề khác lời đọc thì dùng `|`, ví dụ: `Chỉ hai trăm chín mươi chín nghìn đồng thôi! | Chỉ 299.000đ thôi!`
 - Giọng mặc định **Hải Đăng**, phong cách "Rõ chữ" (cài đặt đã được chọn sau khi so sánh nhiều model). Có 25 giọng Bắc / Nam / Trung.
+- **Kiểm tra đọc sai** (mặc định bật): mỗi câu được đọc 3 lần, Whisper nghe lại và giữ bản đúng chữ nhất. Chậm hơn khoảng 5–7 lần so với đọc 1 lần (đoạn 13 câu mất khoảng 2,5 phút), nhưng chữ đọc sai giảm khoảng một nửa. Câu nào Whisper vẫn nghe khác được đánh dấu ⚠ trong "Từng câu": nghe lại, nếu sai thật thì sửa lời (ví dụ viết số bằng chữ) rồi tạo lại. Với giọng miền Nam, Whisper (quen giọng Bắc) hay tính n/ng, ch/tr, au/âu là "khác" dù đọc đúng giọng Nam.
+- Viết số và ký hiệu bằng chữ khi có thể ("chương ba, câu một đến chín" thay cho "3, 1–9") để máy đọc tự nhiên hơn.
 - Tải MP3/WAV/phụ đề .srt, hoặc bấm **Dùng cho dự án đang mở** để ghép vào video.
 - VieNeu-TTS v3 được dùng thương mại; âm thanh có watermark AI không nghe thấy.
 

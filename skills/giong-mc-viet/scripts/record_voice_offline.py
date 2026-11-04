@@ -68,11 +68,18 @@ def main():
         wav_path = os.path.join(a.out, f'line{i:02d}.wav')
         if a.only and i not in a.only and os.path.exists(wav_path):
             continue
-        audio = tts.infer(say, **who, temperature=a.temperature, top_k=a.top_k)
-        sf.write(wav_path, np.asarray(audio, dtype=np.float32), SR)
-        if abs(a.speed - 1.0) > 1e-3:   # atempo keeps the pitch, unlike resampling
+        # VieNeu starts sounding on its first frame and often clips the first consonant (and pops);
+        # a leading "..." gives it a beat to start cleanly.
+        audio = np.asarray(tts.infer('... ' + say, **who, temperature=a.temperature, top_k=a.top_k), dtype=np.float32)
+        fade = min(len(audio), int(0.015 * SR))   # 15 ms fades: no pop when lines are joined to silence
+        if fade:
+            audio[:fade] *= np.linspace(0, 1, fade, dtype=np.float32)
+            audio[-fade:] *= np.linspace(1, 0, fade, dtype=np.float32)
+        sf.write(wav_path, audio, SR)
+        if abs(a.speed - 1.0) > 1e-3:   # rubberband keeps pitch and timbre; atempo warbles
             tmp = wav_path + '.tmp.wav'
-            ffmpeg('-i', wav_path, '-af', f'atempo={a.speed}', '-ar', str(SR), tmp)
+            ffmpeg('-i', wav_path, '-af', f'rubberband=tempo={a.speed}:pitchq=quality:formant=preserved:transients=smooth',
+                   '-ar', str(SR), tmp)
             os.replace(tmp, wav_path)
         ffmpeg('-i', wav_path, '-c:a', 'libmp3lame', '-b:a', '192k', os.path.join(a.out, f'line{i:02d}.mp3'))
         print(f'ok line{i:02d}.mp3  {sf.info(wav_path).duration:.2f}s  {say}')

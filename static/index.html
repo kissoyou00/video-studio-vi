@@ -312,6 +312,12 @@
         </select>
         <label class="f">Nghỉ giữa các câu <b id="vGapVal"></b></label>
         <input type="range" id="vGap" min="0" max="1.5" step="0.05" value="0.4">
+        <label class="f">Kiểm tra đọc sai</label>
+        <select id="vTakes">
+          <option value="3">Đọc 3 lần, Whisper chọn bản đúng nhất (đề xuất)</option>
+          <option value="5">Đọc 5 lần, kỹ nhất (chậm hơn)</option>
+          <option value="1">Đọc 1 lần, nhanh, không kiểm tra</option>
+        </select>
         <div class="muted" style="margin-top:10px">Chạy offline bằng VieNeu-TTS v3 (được dùng thương mại). Lần tạo đầu tiên mất thêm khoảng 45 giây để nạp model.</div>
       </div>
     </div>
@@ -733,7 +739,7 @@ $("#btnVoice").onclick = async () => {
   const b = $("#btnVoice"); b.disabled = true;
   const { job } = await api("POST", "/api/voices/generate", {
     text, title: $("#vTitle").value, voice: $("#vPreset").value, myvoice: mine ? $("#vMine").value : "",
-    speed: +$("#vSpeed").value, temperature: +$("#vTemp").value, top_k: +$("#vTemp").value <= 0.3 ? 10 : 25, gap: +$("#vGap").value });
+    speed: +$("#vSpeed").value, temperature: +$("#vTemp").value, top_k: +$("#vTemp").value <= 0.3 ? 10 : 25, gap: +$("#vGap").value, takes: +$("#vTakes").value });
   watchJob(job, $("#jobVoice"), async () => { b.disabled = false; await loadVoices(); });
 };
 
@@ -743,6 +749,8 @@ async function loadVoices() {
     <div class="vt">
       <div class="row" style="justify-content:space-between"><b>${esc(v.title)}</b>
         <span class="muted">${esc(v.voice)} · ${fmt(v.total)} · ${v.lines.length} câu · ${v.created}</span></div>
+      ${(() => { const bad = v.lines.filter(l => l.check?.errors).length;
+                 return v.takes > 1 ? `<div class="muted" style="margin-top:2px">${bad ? `⚠ ${bad} câu Whisper nghe khác chữ, bấm "Từng câu" để xem` : "✓ Whisper nghe đúng tất cả các câu"}</div>` : ""; })()}
       <audio controls preload="none" src="/files/${v.files.mp3}" style="margin-top:6px"></audio>
       <div class="row" style="margin-top:4px">
         <a href="/files/${v.files.mp3}" download>MP3</a><a href="/files/${v.files.wav}" download>WAV</a><a href="/files/${v.files.srt}" download>Phụ đề .srt</a>
@@ -752,7 +760,9 @@ async function loadVoices() {
         <button class="btn small" data-vdel="${v.id}">Xoá</button>
       </div>
       <div class="lines" id="lines-${v.id}">${v.lines.map((l, i) => `
-        <div class="line"><span class="muted">${i + 1}</span><span>${esc(l.sub)}</span><audio controls preload="none" src="/files/${l.url}"></audio></div>`).join("")}</div>
+        <div class="line"><span class="muted">${i + 1}</span><span>${esc(l.sub)}${l.check?.errors
+          ? `<br><span class="muted" title="Whisper quen giọng Bắc; với giọng miền Nam, n/ng, ch/tr có thể bị tính là khác">⚠ Whisper nghe: ${esc(l.check.diff)}</span>` : ""}</span>
+          <audio controls preload="none" src="/files/${l.url}"></audio></div>`).join("")}</div>
     </div>`).join("") : `<p class="muted">Chưa có.</p>`;
   $$("[data-lines]").forEach(b => b.onclick = () => $(`#lines-${b.dataset.lines}`).classList.toggle("open"));
   $$("[data-vdel]").forEach(b => b.onclick = async () => { if (confirm("Xoá bản giọng này?")) { await api("DELETE", `/api/voices/${b.dataset.vdel}`); loadVoices(); } });

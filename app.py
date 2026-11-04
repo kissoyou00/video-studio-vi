@@ -695,6 +695,49 @@ def parse_script(text: str) -> list[tuple[str, str]]:
     return lines
 
 
+def declick(audio: np.ndarray, fade_in_s: float = 0.015, fade_out_s: float = 0.015) -> np.ndarray:
+    """Short fades at both ends: a line that starts or stops mid-waveform pops when joined to silence."""
+    x = audio.copy()
+    a, b = min(len(x), int(fade_in_s * SR)), min(len(x), int(fade_out_s * SR))
+    if a:
+        x[:a] *= np.linspace(0, 1, a, dtype=np.float32)
+    if b:
+        x[-b:] *= np.linspace(1, 0, b, dtype=np.float32)
+    return x
+
+
+def onset_peak(path: Path) -> float:
+    x, sr = sf.read(str(path), dtype="float32")
+    return float(np.abs(x[: int(0.005 * sr)]).max()) if len(x) else 0.0
+
+
+def pick_best_takes(job: dict, takes: dict[int, list[Path]], lines: list[tuple[str, str]]) -> dict[int, dict]:
+    """Whisper-score every take; per line keep the fewest wrong words, then the cleanest start.
+    Runs in the Whisper environment as one subprocess (one model load for the whole job)."""
+    order = [(i, k, p) for i, ps in takes.items() for k, p in enumerate(ps)]
+    req_f, out_f = takes[1][0].parent / "_score_in.json", takes[1][0].parent / "_score_out.json"
+    req_f.write_text(json.dumps([{"path": str(p), "text": lines[i - 1][0]} for i, _, p in order], ensure_ascii=False),
+                     encoding="utf-8")
+    log(job, f"Đang kiểm tra {len(order)} bản đọc bằng Whisper để chọn bản đúng nhất…")
+    try:
+        run_cmd(job, [SYS_PY, HELPERS / "score_takes.py", req_f, out_f])
+        scores = json.loads(out_f.read_text(encoding="utf-8"))
+    except Exception as e:   # no Whisper env or it failed: keep the first take, don't lose the job
+        log(job, f"Không kiểm tra được bằng Whisper ({e}); dùng bản đọc đầu tiên.")
+        return {}
+    best: dict[int, dict] = {}
+    for (i, k, p), sc in zip(order, scores):
+        key = (sc["errors"], onset_peak(p))
+        if i not in best or key < best[i]["_key"]:
+            best[i] = {"_key": key, "take": k, "errors": sc["errors"], "words": sc["words"], "diff": sc["diff"],
+                       "takes": len(takes[i])}
+    for i, b in sorted(best.items()):
+        b.pop("_key")
+        log(job, f"Câu {i}: chọn bản {b['take'] + 1}/{b['takes']}" +
+            (" (Whisper nghe đúng hết)" if not b["errors"] else f" (Whisper nghe khác {b['errors']} chữ: {b['diff']})"))
+    return best
+
+
 def job_voice(job: dict, req: dict) -> dict:
     lines = parse_script(req.get("text", ""))
     if not lines:
@@ -707,19 +750,34 @@ def job_voice(job: dict, req: dict) -> dict:
     label = f"Giọng của tôi: {myvoice_meta(mydir)['name']}" if mydir else (req.get("voice") or "Hải Đăng")
     temp, top_k = float(req.get("temperature", 0.3)), int(req.get("top_k", 10))
     speed, gap = float(req.get("speed", 1.0)), float(req.get("gap", 0.4))
+    takes_n = max(1, min(5, int(req.get("takes", 3))))
+    tdir = d / "_takes"
+    tdir.mkdir()
+    takes: dict[int, list[Path]] = {}
     with GPU:
         model = TTS.get(job)
         who = {"voice": voice_profile(job, mydir, model) if mydir else label}
         for i, (say, _) in enumerate(lines, 1):
-            log(job, f"Câu {i}/{len(lines)}: {say[:70]}")
-            audio = np.asarray(model.infer(say, **who, temperature=temp, top_k=top_k), dtype=np.float32)
-            wav = d / f"line{i:02d}.wav"
-            sf.write(str(wav), audio, SR)
-            if abs(speed - 1.0) > 1e-3:   # atempo keeps the pitch
-                tmp = d / f"line{i:02d}.tmp.wav"
-                ffmpeg("-i", wav, "-af", f"atempo={speed}", "-ar", str(SR), tmp)
-                os.replace(tmp, wav)
-            ffmpeg("-i", wav, "-c:a", "libmp3lame", "-b:a", "192k", d / f"line{i:02d}.mp3")
+            log(job, f"Câu {i}/{len(lines)}" + (f" ({takes_n} lần đọc)" if takes_n > 1 else "") + f": {say[:70]}")
+            for k in range(takes_n):
+                # VieNeu starts sounding on its very first frame and often clips the first consonant
+                # ("Sách"→"rách", plus a pop); a leading "..." gives it a beat to start cleanly.
+                audio = np.asarray(model.infer("... " + say, **who, temperature=temp, top_k=top_k), dtype=np.float32)
+                p = tdir / f"line{i:02d}_{k}.wav"
+                sf.write(str(p), audio, SR)
+                takes.setdefault(i, []).append(p)
+        checks = pick_best_takes(job, takes, lines) if takes_n > 1 else {}
+    for i in range(1, len(lines) + 1):
+        best = checks.get(i, {}).get("take", 0)
+        audio, _ = sf.read(str(takes[i][best]), dtype="float32")
+        sf.write(str(d / f"line{i:02d}.wav"), declick(audio), SR)
+        if abs(speed - 1.0) > 1e-3:   # rubberband: clean time-stretch, pitch and timbre kept (atempo warbles)
+            tmp = d / f"line{i:02d}.tmp.wav"
+            ffmpeg("-i", d / f"line{i:02d}.wav", "-af",
+                   f"rubberband=tempo={speed}:pitchq=quality:formant=preserved:transients=smooth", "-ar", str(SR), tmp)
+            os.replace(tmp, d / f"line{i:02d}.wav")
+        ffmpeg("-i", d / f"line{i:02d}.wav", "-c:a", "libmp3lame", "-b:a", "192k", d / f"line{i:02d}.mp3")
+    shutil.rmtree(tdir, ignore_errors=True)
     gap_s = np.zeros(int(round(gap * SR)), dtype=np.float32)
     parts, meta, srt, t = [], [], [], 0.0
     for i, (say, sub) in enumerate(lines, 1):
@@ -727,7 +785,7 @@ def job_voice(job: dict, req: dict) -> dict:
         dur = len(audio) / SR
         parts.append(audio)
         meta.append({"file": f"line{i:02d}.mp3", "say": say, "sub": sub, "start": round(t, 3), "end": round(t + dur, 3),
-                     "duration": round(dur, 3)})
+                     "duration": round(dur, 3), **({"check": checks[i]} if i in checks else {})})
         srt.append(f"{i}\n{srt_stamp(t)} --> {srt_stamp(t + dur)}\n{sub}\n")
         t += dur
         if len(gap_s) and i < len(lines):
@@ -736,7 +794,7 @@ def job_voice(job: dict, req: dict) -> dict:
     sf.write(str(d / "voice_full.wav"), np.concatenate(parts), SR)
     ffmpeg("-i", d / "voice_full.wav", "-c:a", "libmp3lame", "-b:a", "192k", d / "voice_full.mp3")
     (d / "subtitles.srt").write_text("\n".join(srt), encoding="utf-8")
-    info = {"id": vid, "title": title, "voice": label,
+    info = {"id": vid, "title": title, "voice": label, "takes": takes_n,
             "temperature": temp, "top_k": top_k, "speed": speed, "gap": gap, "total": round(t, 2),
             "created": time.strftime("%Y-%m-%d %H:%M"), "text": req.get("text", ""), "lines": meta}
     (d / "lines.json").write_text(json.dumps(info, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -1079,8 +1137,8 @@ def job_myvoice_create(job: dict, d: Path) -> dict:
         model = TTS.get(job)
         profile = voice_profile(job, d, model)
         log(job, "Đang đọc thử một câu bằng giọng vừa clone…")
-        audio = np.asarray(model.infer(SAMPLE_TEXT, voice=profile, temperature=0.3, top_k=10), dtype=np.float32)
-    sf.write(str(d / "sample.wav"), audio, SR)
+        audio = np.asarray(model.infer("... " + SAMPLE_TEXT, voice=profile, temperature=0.3, top_k=10), dtype=np.float32)
+    sf.write(str(d / "sample.wav"), declick(audio), SR)
     ffmpeg("-i", d / "sample.wav", "-c:a", "libmp3lame", "-b:a", "160k", d / "sample.mp3")
     (d / "sample.wav").unlink(missing_ok=True)
     log(job, f"Đã lưu giọng \"{myvoice_meta(d)['name']}\".")
