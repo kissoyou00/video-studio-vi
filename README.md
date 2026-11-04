@@ -16,7 +16,7 @@ Hướng dẫn sử dụng chi tiết: [HUONG-DAN.md](HUONG-DAN.md).
 ## Cài đặt
 
 ```powershell
-git clone https://github.com/<tai-khoan>/video-studio-vi.git
+git clone https://github.com/kissoyou00/video-studio-vi.git
 cd video-studio-vi
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
@@ -46,4 +46,4 @@ Chép thư mục `skills/giong-mc-viet` vào `%USERPROFILE%\.claude\skills\`. Sc
 
 ## Giấy phép
 
-Mã của bên thứ ba và model: xem [THIRD-PARTY.md](THIRD-PARTY.md).
+Mã nguồn của dự án: [MIT](LICENSE). Mã của bên thứ ba (thư mục `helpers/`, MIT của Browser Use) và các model tải về khi cài: xem [THIRD-PARTY.md](THIRD-PARTY.md). Lưu ý: chỉ clone giọng của chính bạn hoặc giọng bạn được phép dùng.
