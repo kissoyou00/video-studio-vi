@@ -51,9 +51,18 @@ Chuyển cảnh và whoosh chỉ xảy ra ở chỗ chuyển giữa **hai clip k
 ## Tạo giọng đọc
 
 - Mỗi dòng là một câu. Viết số bằng chữ khi đọc; muốn phụ đề khác lời đọc thì dùng `|`, ví dụ: `Chỉ hai trăm chín mươi chín nghìn đồng thôi! | Chỉ 299.000đ thôi!`
-- Giọng mặc định **Hải Đăng**, phong cách "Rõ chữ" (cài đặt đã được chọn sau khi so sánh nhiều model). Có 25 giọng Bắc / Nam / Trung, hoặc nhái giọng từ đoạn ghi âm 3–8 giây (chỉ dùng giọng của bạn hoặc giọng được phép).
+- Giọng mặc định **Hải Đăng**, phong cách "Rõ chữ" (cài đặt đã được chọn sau khi so sánh nhiều model). Có 25 giọng Bắc / Nam / Trung.
 - Tải MP3/WAV/phụ đề .srt, hoặc bấm **Dùng cho dự án đang mở** để ghép vào video.
 - VieNeu-TTS v3 được dùng thương mại; âm thanh có watermark AI không nghe thấy.
+
+### Clone giọng và lưu lại ("Giọng của tôi")
+
+1. Ở mục **🧬 Clone giọng mới**, đặt **tên giọng** (ví dụ "Giọng anh Tuấn").
+2. Bấm **🎙 Ghi âm** rồi đọc to câu gợi ý (tự dừng sau 12 giây, bấm **⏹ Dừng** để dừng sớm), hoặc **📁 Chọn file** ghi âm / video có sẵn. Cần 3–12 giây nói rõ, đều giọng, ít tiếng ồn. Lần đầu ghi âm, trình duyệt sẽ hỏi quyền dùng micro.
+3. Tick xác nhận đây là giọng của bạn hoặc bạn được phép dùng, bấm **Lưu giọng**. Ứng dụng phân tích giọng một lần và đọc thử một câu để bạn nghe ngay.
+4. Giọng đã lưu nằm trong danh sách **Giọng của tôi**: nghe thử, nghe đoạn ghi âm gốc, **Dùng giọng này**, **Đổi tên**, **Xoá**. Chọn "Giọng của tôi" ở mục **2. Giọng** khi tạo giọng đọc.
+
+Giọng đã lưu ở `%USERPROFILE%\VideoStudioefs`. Tên giọng không được trùng nhau. Xoá một giọng không xoá các bản giọng đọc đã tạo bằng giọng đó.
 
 ## Giới hạn hiện tại
 

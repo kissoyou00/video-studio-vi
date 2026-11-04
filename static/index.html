@@ -258,13 +258,32 @@
         <h2><span class="n">2</span> Giọng</h2>
         <label class="row"><input type="radio" name="vmode" value="preset" checked> Giọng có sẵn</label>
         <select id="vPreset" style="margin-top:6px"></select>
-        <label class="row" style="margin-top:12px"><input type="radio" name="vmode" value="clone"> Nhái giọng từ đoạn ghi âm</label>
-        <select id="vRef" style="margin-top:6px"></select>
-        <div class="row" style="margin-top:6px">
-          <label class="btn small">Tải đoạn ghi âm (3–8 giây)<input type="file" id="refFile" accept="audio/*,video/*" hidden></label>
+        <label class="row" style="margin-top:12px"><input type="radio" name="vmode" value="mine"> Giọng của tôi (đã clone)</label>
+        <select id="vMine" style="margin-top:6px"></select>
+        <audio id="minePlay" controls class="hidden" style="margin-top:6px"></audio>
+      </div>
+
+      <div class="card">
+        <h2>🧬 Clone giọng mới</h2>
+        <label class="f">Tên giọng</label>
+        <input type="text" id="cName" maxlength="60" placeholder="Ví dụ: Giọng anh Tuấn, Giọng chị Lan">
+        <label class="f">Đoạn ghi âm 3–12 giây: nói rõ, đều giọng, ít tiếng ồn</label>
+        <div class="row">
+          <button class="btn" id="btnRec">🎙 Ghi âm</button>
+          <label class="btn">📁 Chọn file<input type="file" id="cFile" accept="audio/*,video/*" hidden></label>
+          <span class="muted" id="recTimer"></span>
         </div>
-        <div class="muted" style="margin-top:4px">Chỉ nhái giọng của bạn, hoặc giọng bạn được phép dùng.</div>
-        <audio id="refPlay" controls class="hidden" style="margin-top:6px"></audio>
+        <div class="muted hidden" id="readHint" style="margin-top:6px">Đọc to: <i>“Xin chào, tôi đang thu giọng để tạo giọng đọc riêng. Hôm nay trời thật đẹp, chúng ta cùng bắt đầu nhé!”</i></div>
+        <audio id="cPreview" controls class="hidden" style="margin-top:6px"></audio>
+        <label class="fx" style="margin-top:8px"><input type="checkbox" id="cConsent">
+          <span>Đây là giọng của tôi, hoặc tôi được người đó cho phép dùng.</span></label>
+        <div class="row" style="margin-top:10px"><button class="btn primary" id="btnClone">Lưu giọng</button></div>
+        <div class="job hidden" id="jobClone"></div>
+      </div>
+
+      <div class="card">
+        <h2>Giọng của tôi</h2>
+        <div id="mineList"><p class="muted">Chưa có giọng nào.</p></div>
       </div>
       <div class="card">
         <h2><span class="n">3</span> Cách đọc</h2>
@@ -575,36 +594,118 @@ function voiceOptions() {
       `<option value="${esc(v.name)}">${esc(v.name)} — ${v.gender} · ${v.style}${v.name === "Hải Đăng" ? " (mặc định)" : ""}</option>`).join("") + `</optgroup>`).join("");
   $("#vPreset").value = "Hải Đăng";
 }
-async function loadRefs(select) {
-  const refs = await api("GET", "/api/refs");
-  $("#vRef").innerHTML = refs.length ? refs.map(r => `<option value="${esc(r.name)}" data-url="${r.url}">${esc(r.name)}</option>`).join("") : `<option value="">Chưa có đoạn ghi âm</option>`;
-  if (select) $("#vRef").value = select;
-  showRef();
+// ---------- saved cloned voices ("Giọng của tôi") ----------
+let MINE = [], CLONE_BLOB = null, CLONE_SRC = "upload";
+async function loadMine(select) {
+  MINE = await api("GET", "/api/myvoices");
+  const prev = select || $("#vMine").value;
+  $("#vMine").innerHTML = MINE.length ? MINE.map(v => `<option value="${v.id}">${esc(v.name)}</option>`).join("")
+                                      : `<option value="">Chưa có giọng nào, hãy clone ở bên dưới</option>`;
+  if (prev && MINE.some(v => v.id === prev)) $("#vMine").value = prev;
+  showMine();
+  $("#mineList").innerHTML = MINE.length ? MINE.map(v => `
+    <div class="vt">
+      <div class="row" style="justify-content:space-between"><b>${esc(v.name)}</b>
+        <span class="muted">${v.source === "mic" ? "🎙 ghi âm" : "📁 file"} · ${(+v.duration).toFixed(1)} giây · ${v.created}</span></div>
+      ${v.sample_url ? `<div class="muted" style="margin-top:4px">Nghe thử giọng clone:</div><audio controls preload="none" src="/files/${v.sample_url}"></audio>`
+                     : `<div class="muted">Chưa có bản nghe thử.</div>`}
+      <details style="margin-top:2px"><summary class="muted" style="cursor:pointer">Đoạn ghi âm gốc</summary>
+        <audio controls preload="none" src="/files/${v.ref_url}"></audio></details>
+      <div class="row" style="margin-top:6px">
+        <button class="btn small" data-mine-use="${v.id}">Dùng giọng này</button>
+        <button class="btn small" data-mine-ren="${v.id}">Đổi tên</button>
+        <button class="btn small" data-mine-del="${v.id}">Xoá</button>
+      </div>
+    </div>`).join("") : `<p class="muted">Chưa có giọng nào.</p>`;
+  $$("[data-mine-use]").forEach(b => b.onclick = () => {
+    $("#vMine").value = b.dataset.mineUse; $('input[name=vmode][value=mine]').checked = true; showMine();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  $$("[data-mine-ren]").forEach(b => b.onclick = async () => {
+    const v = MINE.find(x => x.id === b.dataset.mineRen);
+    const name = prompt("Tên mới cho giọng:", v.name);
+    if (!name || name.trim() === v.name) return;
+    try { await api("PATCH", `/api/myvoices/${v.id}`, { name: name.trim() }); await loadMine(v.id); } catch (e) { alert(e.message); }
+  });
+  $$("[data-mine-del]").forEach(b => b.onclick = async () => {
+    const v = MINE.find(x => x.id === b.dataset.mineDel);
+    if (!confirm(`Xoá giọng "${v.name}"? Các bản giọng đọc đã tạo bằng giọng này vẫn được giữ.`)) return;
+    await api("DELETE", `/api/myvoices/${v.id}`); await loadMine();
+  });
 }
-function showRef() {
-  const opt = $("#vRef").selectedOptions[0], a = $("#refPlay");
-  if (opt?.dataset.url) { a.src = "/files/" + opt.dataset.url; a.classList.remove("hidden"); } else a.classList.add("hidden");
+function showMine() {
+  const v = MINE.find(x => x.id === $("#vMine").value), a = $("#minePlay");
+  if (v?.sample_url) { a.src = "/files/" + v.sample_url; a.classList.remove("hidden"); } else a.classList.add("hidden");
 }
-$("#vRef").onchange = () => { $('input[name=vmode][value=clone]').checked = true; showRef(); };
+$("#vMine").onchange = () => { $('input[name=vmode][value=mine]').checked = true; showMine(); };
 $("#vPreset").onchange = () => { $('input[name=vmode][value=preset]').checked = true; };
-$("#refFile").onchange = async e => {
-  const f = e.target.files[0]; if (!f) return;
-  const fd = new FormData(); fd.append("file", f);
-  const r = await api("POST", "/api/refs", fd);
-  $('input[name=vmode][value=clone]').checked = true;
-  await loadRefs(r.name);
+
+function setCloneAudio(blob, src) {
+  CLONE_BLOB = blob; CLONE_SRC = src;
+  const a = $("#cPreview"); a.src = URL.createObjectURL(blob); a.classList.remove("hidden");
+}
+$("#cFile").onchange = e => { const f = e.target.files[0]; if (f) setCloneAudio(f, "upload"); };
+
+let recorder = null, recTick = null;
+$("#btnRec").onclick = async () => {
+  if (recorder) { recorder.stop(); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch (e) { alert("Không mở được micro. Hãy cho phép trình duyệt dùng micro rồi thử lại.\n\n" + e.message); return; }
+  const chunks = [];
+  recorder = new MediaRecorder(stream);
+  recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
+  recorder.onstop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    clearInterval(recTick); recorder = null;
+    $("#btnRec").textContent = "🎙 Ghi âm lại"; $("#readHint").classList.add("hidden");
+    const secs = $("#recTimer").dataset.s;
+    $("#recTimer").textContent = `Đã ghi ${secs} giây`;
+    setCloneAudio(new Blob(chunks, { type: chunks[0]?.type || "audio/webm" }), "mic");
+  };
+  recorder.start();
+  const t0 = Date.now();
+  $("#btnRec").textContent = "⏹ Dừng"; $("#readHint").classList.remove("hidden");
+  recTick = setInterval(() => {
+    const s = (Date.now() - t0) / 1000;
+    $("#recTimer").dataset.s = s.toFixed(1);
+    $("#recTimer").textContent = `● Đang ghi ${s.toFixed(0)}/12 giây`;
+    if (s >= 12) recorder?.stop();   // longer clips don't clone better
+  }, 200);
+};
+
+$("#btnClone").onclick = async () => {
+  const name = $("#cName").value.trim();
+  if (!name) { alert("Hãy đặt tên cho giọng."); return; }
+  if (!CLONE_BLOB) { alert("Hãy ghi âm hoặc chọn một file ghi âm."); return; }
+  if (!$("#cConsent").checked) { alert("Hãy xác nhận đây là giọng của bạn hoặc bạn được phép dùng."); return; }
+  const fd = new FormData();
+  fd.append("file", CLONE_BLOB, CLONE_BLOB.name || (CLONE_SRC === "mic" ? "ghi-am.webm" : "giong.wav"));
+  fd.append("name", name); fd.append("source", CLONE_SRC);
+  const b = $("#btnClone"); b.disabled = true;
+  try {
+    const { id, job } = await api("POST", "/api/myvoices", fd);
+    watchJob(job, $("#jobClone"), async j => {
+      b.disabled = false;
+      if (j.status !== "done") return;
+      $("#cName").value = ""; CLONE_BLOB = null; $("#cPreview").classList.add("hidden"); $("#recTimer").textContent = "";
+      $("#cConsent").checked = false; $("#btnRec").textContent = "🎙 Ghi âm";
+      await loadMine(id);
+      $('input[name=vmode][value=mine]').checked = true;
+    });
+  } catch (e) { b.disabled = false; alert(e.message); }
 };
 const vLabels = () => { $("#vSpeedVal").textContent = `${Math.round($("#vSpeed").value * 100)}%`; $("#vGapVal").textContent = `${(+$("#vGap").value).toFixed(2)} giây`;
   const n = $("#vText").value.split("\n").filter(l => l.trim() && !l.trim().startsWith("#")).length; $("#vCount").textContent = n ? `${n} câu` : ""; };
 ["#vSpeed", "#vGap", "#vText"].forEach(s => $(s).addEventListener("input", vLabels));
 
 $("#btnVoice").onclick = async () => {
-  const clone = $('input[name=vmode]:checked').value === "clone";
-  if (clone && !$("#vRef").value) { alert("Hãy tải lên một đoạn ghi âm để nhái giọng."); return; }
+  const mine = $('input[name=vmode]:checked').value === "mine";
+  if (mine && !$("#vMine").value) { alert("Chưa có giọng clone nào. Hãy clone giọng ở mục bên phải trước."); return; }
   const text = $("#vText").value.trim() || $("#vText").placeholder;
   const b = $("#btnVoice"); b.disabled = true;
   const { job } = await api("POST", "/api/voices/generate", {
-    text, title: $("#vTitle").value, voice: $("#vPreset").value, ref: clone ? $("#vRef").value : "",
+    text, title: $("#vTitle").value, voice: $("#vPreset").value, myvoice: mine ? $("#vMine").value : "",
     speed: +$("#vSpeed").value, temperature: +$("#vTemp").value, top_k: +$("#vTemp").value <= 0.3 ? 10 : 25, gap: +$("#vGap").value });
   watchJob(job, $("#jobVoice"), async () => { b.disabled = false; await loadVoices(); });
 };
@@ -659,7 +760,7 @@ $("#btnQuit").onclick = async () => {
   INFO = await api("GET", "/api/info");
   $("#workdir").textContent = "Dữ liệu: " + INFO.work;
   voiceOptions(); vLabels();
-  await Promise.all([loadRefs(), loadVoices()]);
+  await Promise.all([loadMine(), loadVoices()]);
   await loadProjects();
   showTab(store.get("tab") || "edit");
 })();

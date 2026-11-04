@@ -28,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from fastapi import Body, FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -703,12 +703,13 @@ def job_voice(job: dict, req: dict) -> dict:
     vid = time.strftime("%Y%m%d-%H%M%S") + "-" + slug(title, "giong-doc")
     d = VOICES / vid
     d.mkdir(parents=True)
-    ref = req.get("ref") or ""
-    who = {"ref_audio": str(REFS / Path(ref).name)} if ref else {"voice": req.get("voice") or "Hải Đăng"}
+    mydir = myvoice_dir(req["myvoice"]) if req.get("myvoice") else None
+    label = f"Giọng của tôi: {myvoice_meta(mydir)['name']}" if mydir else (req.get("voice") or "Hải Đăng")
     temp, top_k = float(req.get("temperature", 0.3)), int(req.get("top_k", 10))
     speed, gap = float(req.get("speed", 1.0)), float(req.get("gap", 0.4))
     with GPU:
         model = TTS.get(job)
+        who = {"voice": voice_profile(job, mydir, model) if mydir else label}
         for i, (say, _) in enumerate(lines, 1):
             log(job, f"Câu {i}/{len(lines)}: {say[:70]}")
             audio = np.asarray(model.infer(say, **who, temperature=temp, top_k=top_k), dtype=np.float32)
@@ -735,7 +736,7 @@ def job_voice(job: dict, req: dict) -> dict:
     sf.write(str(d / "voice_full.wav"), np.concatenate(parts), SR)
     ffmpeg("-i", d / "voice_full.wav", "-c:a", "libmp3lame", "-b:a", "192k", d / "voice_full.mp3")
     (d / "subtitles.srt").write_text("\n".join(srt), encoding="utf-8")
-    info = {"id": vid, "title": title, "voice": ("nhái: " + Path(ref).stem) if ref else who["voice"],
+    info = {"id": vid, "title": title, "voice": label,
             "temperature": temp, "top_k": top_k, "speed": speed, "gap": gap, "total": round(t, 2),
             "created": time.strftime("%Y-%m-%d %H:%M"), "text": req.get("text", ""), "lines": meta}
     (d / "lines.json").write_text(json.dumps(info, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -947,22 +948,134 @@ def delete_voice(vid: str) -> dict:
     return {"ok": True}
 
 
-@app.get("/api/refs")
-def list_refs() -> list:
-    return [{"name": f.name, "url": rel(f)} for f in sorted(REFS.glob("*.wav"))]
+# -------- API: saved cloned voices ("Giọng của tôi") -------------------------
+# refs/<id>/ref.wav      cleaned reference clip (what the voice was cloned from)
+#          voice.npz     VieNeu speaker embedding + reference codes, encoded once
+#          meta.json     {name, created, duration, source}
+#          sample.mp3    a fixed sentence read in the cloned voice, to judge the clone
+
+SAMPLE_TEXT = "Xin chào, đây là giọng đọc được tạo từ đoạn ghi âm của bạn. Nghe có giống không nhỉ?"
+MIN_REF_S, MAX_REF_S = 3.0, 12.0
 
 
-@app.post("/api/refs")
-def upload_ref(file: UploadFile = File(...)) -> dict:
-    raw = unique(REFS / f"_upload{Path(file.filename or '.wav').suffix.lower()}")
-    with raw.open("wb") as out:
-        shutil.copyfileobj(file.file, out, 1 << 20)
-    dest = unique(REFS / f"{slug(Path(file.filename or 'giong').stem, 'giong')}.wav")
-    try:   # mono 24 kHz, first 8 s (VieNeu clones from 3-8 s)
-        ffmpeg("-i", raw, "-t", "8", "-ac", "1", "-ar", "24000", dest)
+def myvoice_dir(vid: str) -> Path:
+    d = REFS / safe_id(vid)
+    if not (d / "meta.json").exists():
+        raise HTTPException(404, "Không tìm thấy giọng đã lưu")
+    return d
+
+
+def myvoice_meta(d: Path) -> dict:
+    return json.loads((d / "meta.json").read_text(encoding="utf-8"))
+
+
+def myvoice_entry(d: Path) -> dict:
+    base = rel(d)
+    return {**myvoice_meta(d), "id": d.name, "ref_url": f"{base}/ref.wav",
+            "sample_url": f"{base}/sample.mp3" if (d / "sample.mp3").exists() else "",
+            "ready": (d / "voice.npz").exists()}
+
+
+def name_taken(name: str, except_id: str = "") -> bool:
+    return any(myvoice_meta(d)["name"].casefold() == name.casefold()
+               for d in REFS.iterdir() if (d / "meta.json").exists() and d.name != except_id)
+
+
+def migrate_legacy_refs() -> None:
+    """Earlier versions kept bare refs/*.wav clips; turn each into a named saved voice."""
+    for f in REFS.glob("*.wav"):
+        d = unique(REFS / slug(f.stem, "giong"))
+        d.mkdir(parents=True)
+        shutil.move(str(f), d / "ref.wav")
+        (d / "meta.json").write_text(json.dumps(
+            {"name": f.stem, "created": time.strftime("%Y-%m-%d %H:%M", time.localtime(d.stat().st_mtime)),
+             "duration": probe(d / "ref.wav")["duration"], "source": "upload"}, ensure_ascii=False, indent=1),
+            encoding="utf-8")
+
+
+migrate_legacy_refs()
+
+
+def voice_profile(job: dict, d: Path, model) -> dict:
+    """The saved voice as VieNeu's `voice=` dict; enrols (and caches) it on first use."""
+    npz = d / "voice.npz"
+    if not npz.exists():
+        log(job, f"Đang phân tích giọng \"{myvoice_meta(d)['name']}\"…")
+        emb, codes = model.encode_reference(str(d / "ref.wav"), denoise=True)
+        np.savez(npz, speaker_emb=np.asarray(emb, dtype=np.float32),
+                 codes=np.asarray(codes if codes is not None else [], dtype=np.int64))
+    z = np.load(npz)
+    return {"speaker_emb": z["speaker_emb"], "codes": z["codes"] if z["codes"].size else None}
+
+
+def job_myvoice_create(job: dict, d: Path) -> dict:
+    with GPU:
+        model = TTS.get(job)
+        profile = voice_profile(job, d, model)
+        log(job, "Đang đọc thử một câu bằng giọng vừa clone…")
+        audio = np.asarray(model.infer(SAMPLE_TEXT, voice=profile, temperature=0.3, top_k=10), dtype=np.float32)
+    sf.write(str(d / "sample.wav"), audio, SR)
+    ffmpeg("-i", d / "sample.wav", "-c:a", "libmp3lame", "-b:a", "160k", d / "sample.mp3")
+    (d / "sample.wav").unlink(missing_ok=True)
+    log(job, f"Đã lưu giọng \"{myvoice_meta(d)['name']}\".")
+    return myvoice_entry(d)
+
+
+@app.get("/api/myvoices")
+def list_myvoices() -> list:
+    dirs = [d for d in REFS.iterdir() if (d / "meta.json").exists()]
+    return [myvoice_entry(d) for d in sorted(dirs, key=lambda x: myvoice_meta(x).get("created", ""), reverse=True)]
+
+
+@app.post("/api/myvoices")
+def create_myvoice(file: UploadFile = File(...), name: str = Form(...), source: str = Form("upload")) -> dict:
+    name = name.strip()
+    if not name or len(name) > 60:
+        raise HTTPException(400, "Hãy đặt tên cho giọng (tối đa 60 ký tự).")
+    if name_taken(name):
+        raise HTTPException(400, f"Đã có giọng tên \"{name}\". Hãy chọn tên khác.")
+    d = unique(REFS / slug(name, "giong"))
+    d.mkdir(parents=True)
+    raw = d / f"_upload{Path(file.filename or '.webm').suffix.lower() or '.webm'}"
+    try:
+        with raw.open("wb") as out:
+            shutil.copyfileobj(file.file, out, 1 << 20)
+        # mono 24 kHz, leading silence trimmed, at most MAX_REF_S (VieNeu clones best from 3-8 s)
+        ffmpeg("-i", raw, "-af", "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.1",
+               "-t", str(MAX_REF_S), "-ac", "1", "-ar", "24000", d / "ref.wav")
+        dur = probe(d / "ref.wav")["duration"]
+        if dur < MIN_REF_S:
+            raise HTTPException(400, f"Đoạn ghi âm chỉ có {dur:.1f} giây giọng nói. Cần ít nhất {MIN_REF_S:.0f} giây, "
+                                     "nói rõ ràng, ít tiếng ồn.")
+    except Exception:
+        shutil.rmtree(d, ignore_errors=True)
+        raise
     finally:
         raw.unlink(missing_ok=True)
-    return {"name": dest.name, "url": rel(dest), "duration": probe(dest)["duration"]}
+    (d / "meta.json").write_text(json.dumps(
+        {"name": name, "created": time.strftime("%Y-%m-%d %H:%M"), "duration": dur,
+         "source": "mic" if source == "mic" else "upload"}, ensure_ascii=False, indent=1), encoding="utf-8")
+    return {"id": d.name, "job": start_job("clone", job_myvoice_create, d)}
+
+
+@app.patch("/api/myvoices/{vid}")
+def rename_myvoice(vid: str, body: dict = Body(...)) -> dict:
+    d = myvoice_dir(vid)
+    name = (body.get("name") or "").strip()
+    if not name or len(name) > 60:
+        raise HTTPException(400, "Tên giọng không hợp lệ (1-60 ký tự).")
+    if name_taken(name, except_id=d.name):
+        raise HTTPException(400, f"Đã có giọng tên \"{name}\".")
+    meta = myvoice_meta(d)
+    meta["name"] = name
+    (d / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+    return myvoice_entry(d)
+
+
+@app.delete("/api/myvoices/{vid}")
+def delete_myvoice(vid: str) -> dict:
+    shutil.rmtree(myvoice_dir(vid))
+    return {"ok": True}
 
 
 # -------- static -------------------------------------------------------------
