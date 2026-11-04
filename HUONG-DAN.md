@@ -62,8 +62,7 @@ Chuyển cảnh và whoosh chỉ xảy ra ở chỗ chuyển giữa **hai clip k
 3. Tick xác nhận đây là giọng của bạn hoặc bạn được phép dùng, bấm **Lưu giọng**. Ứng dụng phân tích giọng một lần và đọc thử một câu để bạn nghe ngay.
 4. Giọng đã lưu nằm trong danh sách **Giọng của tôi**: nghe thử, nghe đoạn ghi âm gốc, **Dùng giọng này**, **Đổi tên**, **Xoá**. Chọn "Giọng của tôi" ở mục **2. Giọng** khi tạo giọng đọc.
 
-Giọng đã lưu ở `%USERPROFILE%\VideoStudio
-efs`. Tên giọng không được trùng nhau. Xoá một giọng không xoá các bản giọng đọc đã tạo bằng giọng đó.
+Giọng đã lưu ở `%USERPROFILE%\VideoStudio\refs`. Tên giọng không được trùng nhau. Xoá một giọng không xoá các bản giọng đọc đã tạo bằng giọng đó.
 
 ## Giới hạn hiện tại
 
