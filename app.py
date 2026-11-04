@@ -955,7 +955,7 @@ def delete_voice(vid: str) -> dict:
 #          sample.mp3    a fixed sentence read in the cloned voice, to judge the clone
 
 SAMPLE_TEXT = "Xin chào, đây là giọng đọc được tạo từ đoạn ghi âm của bạn. Nghe có giống không nhỉ?"
-MIN_REF_S, MAX_REF_S = 3.0, 12.0
+MIN_REF_S, MAX_REF_S = 15.0, 60.0   # recommended 45-60 s: more pieces → steadier voice embedding
 
 
 def myvoice_dir(vid: str) -> Path:
@@ -996,14 +996,80 @@ def migrate_legacy_refs() -> None:
 migrate_legacy_refs()
 
 
+SEG_S = 7.0   # VieNeu v3 Turbo is built for 3-8 s references; longer recordings are split into pieces
+
+
+def split_reference(wav: Path, out_dir: Path) -> list[Path]:
+    """Cut a long recording into ~SEG_S pieces at the quietest 20 ms near each boundary (between words)."""
+    audio, sr = sf.read(str(wav), dtype="float32")
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    hop = int(0.02 * sr)
+    n = len(audio) // hop
+    rms = np.sqrt((audio[: n * hop].reshape(n, hop) ** 2).mean(axis=1) + 1e-12)
+    total = len(audio) / sr
+    cuts, t = [0], SEG_S
+    while total - t > 3.0:
+        lo, hi = int((t - 1.0) / 0.02), min(n, int((t + 1.0) / 0.02))
+        i = lo + int(np.argmin(rms[lo:hi]))
+        cuts.append(i * hop)
+        t = i * hop / sr + SEG_S
+    cuts.append(len(audio))
+    out_dir.mkdir(exist_ok=True)
+    paths = []
+    for k, (a, b) in enumerate(zip(cuts, cuts[1:])):
+        if (b - a) / sr >= 3.0:
+            p = out_dir / f"seg{k:02d}.wav"
+            sf.write(str(p), audio[a:b], sr)
+            paths.append(p)
+    return paths
+
+
+def enroll(job: dict, model, d: Path) -> None:
+    """Long recordings: enrol every ~7 s piece, average the speaker embeddings (minus outliers such as
+    noise or another voice), and keep the reference codes of the most typical piece. The codes stay
+    short because the model was trained on short references; the embedding gains from all the data."""
+    ref = d / "ref.wav"
+    segs = split_reference(ref, d / "_segs") if probe(ref)["duration"] >= 2 * SEG_S else [ref]
+    embs, codes = [], []
+    try:
+        for i, p in enumerate(segs, 1):
+            if len(segs) > 1:
+                log(job, f"Phân tích đoạn {i}/{len(segs)}…")
+            e, c = model.encode_reference(str(p), denoise=True)
+            embs.append(np.asarray(e, dtype=np.float32).ravel())
+            codes.append(None if c is None else np.asarray(c, dtype=np.int64))
+    finally:
+        shutil.rmtree(d / "_segs", ignore_errors=True)
+    E = np.stack(embs)
+    norms = np.linalg.norm(E, axis=1)
+
+    def centroid(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        m = E[mask].mean(axis=0)
+        m *= norms[mask].mean() / (np.linalg.norm(m) + 1e-9)   # averaging shrinks the norm; restore it
+        return m, E @ m / (norms * np.linalg.norm(m) + 1e-9)
+
+    keep = np.ones(len(E), dtype=bool)
+    mean, cos = centroid(keep)
+    if len(E) >= 3:
+        keep = cos >= cos.max() - 0.25           # drop pieces that don't sound like the rest
+        mean, cos = centroid(keep)
+    best = int(np.argmax(np.where(keep, cos, -1)))
+    np.savez(d / "voice.npz", speaker_emb=mean.astype(np.float32),
+             codes=codes[best] if codes[best] is not None else np.zeros(0, dtype=np.int64))
+    meta = myvoice_meta(d)
+    meta.update({"segments": len(E), "segments_used": int(keep.sum()), "consistency": round(float(cos[keep].mean()), 3)})
+    (d / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+    if len(E) > 1:
+        log(job, f"Đã gộp {int(keep.sum())}/{len(E)} đoạn (độ đồng đều giọng {cos[keep].mean():.2f}).")
+
+
 def voice_profile(job: dict, d: Path, model) -> dict:
     """The saved voice as VieNeu's `voice=` dict; enrols (and caches) it on first use."""
     npz = d / "voice.npz"
     if not npz.exists():
         log(job, f"Đang phân tích giọng \"{myvoice_meta(d)['name']}\"…")
-        emb, codes = model.encode_reference(str(d / "ref.wav"), denoise=True)
-        np.savez(npz, speaker_emb=np.asarray(emb, dtype=np.float32),
-                 codes=np.asarray(codes if codes is not None else [], dtype=np.int64))
+        enroll(job, model, d)
     z = np.load(npz)
     return {"speaker_emb": z["speaker_emb"], "codes": z["codes"] if z["codes"].size else None}
 
@@ -1040,13 +1106,13 @@ def create_myvoice(file: UploadFile = File(...), name: str = Form(...), source: 
     try:
         with raw.open("wb") as out:
             shutil.copyfileobj(file.file, out, 1 << 20)
-        # mono 24 kHz, leading silence trimmed, at most MAX_REF_S (VieNeu clones best from 3-8 s)
+        # mono 24 kHz, leading silence trimmed, at most MAX_REF_S; enroll() splits it into ~7 s pieces
         ffmpeg("-i", raw, "-af", "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.1",
                "-t", str(MAX_REF_S), "-ac", "1", "-ar", "24000", d / "ref.wav")
         dur = probe(d / "ref.wav")["duration"]
         if dur < MIN_REF_S:
-            raise HTTPException(400, f"Đoạn ghi âm chỉ có {dur:.1f} giây giọng nói. Cần ít nhất {MIN_REF_S:.0f} giây, "
-                                     "nói rõ ràng, ít tiếng ồn.")
+            raise HTTPException(400, f"Đoạn ghi âm chỉ có {dur:.1f} giây giọng nói. Cần ít nhất {MIN_REF_S:.0f} giây "
+                                     "(tốt nhất 45–60 giây), nói rõ ràng, ít tiếng ồn.")
     except Exception:
         shutil.rmtree(d, ignore_errors=True)
         raise

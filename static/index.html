@@ -83,6 +83,10 @@
   .fx input[type=checkbox] { margin-top: 3px; accent-color: var(--accent); }
   .fx b { display: block; color: var(--ink); font-size: 14px; }
   .fx input[type=text] { margin-top: 4px; padding: 5px 8px; font-size: 13px; }
+  .recbar { position: relative; height: 8px; background: var(--chip); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+  .recbar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--accent); }
+  .recbar .m45 { position: absolute; left: 75%; top: 0; bottom: 0; width: 2px; background: var(--ok); }
+  .readbox { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); line-height: 1.7; font-size: 14.5px; }
   .drop { border: 2px dashed var(--line); border-radius: 10px; padding: 14px; text-align: center; color: var(--muted); }
   .drop.over { border-color: var(--accent); color: var(--ink); }
   a { color: var(--accent); }
@@ -267,13 +271,24 @@
         <h2>🧬 Clone giọng mới</h2>
         <label class="f">Tên giọng</label>
         <input type="text" id="cName" maxlength="60" placeholder="Ví dụ: Giọng anh Tuấn, Giọng chị Lan">
-        <label class="f">Đoạn ghi âm 3–12 giây: nói rõ, đều giọng, ít tiếng ồn</label>
+        <label class="f">Đoạn ghi âm <b>45–60 giây</b> (ít nhất 15 giây): nói rõ, tự nhiên, ít tiếng ồn, chỉ một người nói</label>
         <div class="row">
           <button class="btn" id="btnRec">🎙 Ghi âm</button>
           <label class="btn">📁 Chọn file<input type="file" id="cFile" accept="audio/*,video/*" hidden></label>
-          <span class="muted" id="recTimer"></span>
         </div>
-        <div class="muted hidden" id="readHint" style="margin-top:6px">Đọc to: <i>“Xin chào, tôi đang thu giọng để tạo giọng đọc riêng. Hôm nay trời thật đẹp, chúng ta cùng bắt đầu nhé!”</i></div>
+        <div class="recbar hidden" id="recBar"><i></i><span class="m45"></span></div>
+        <div class="muted" id="recTimer" style="margin-top:4px"></div>
+        <div class="readbox hidden" id="readHint">
+          <div class="muted" style="margin-bottom:4px">Đọc to, giọng tự nhiên như khi nói chuyện:</div>
+          Xin chào, tôi đang thu giọng để tạo giọng đọc riêng cho mình. Hôm nay trời thật đẹp, nắng nhẹ và gió mát.
+          Bạn có biết không? Ở quê tôi, mỗi sáng sớm, người ta đã ra đồng từ lúc mặt trời chưa lên.
+          Chợ quê họp từ năm giờ, bán đủ thứ: rau, cá, trái cây, bánh trái thơm lừng.
+          Tôi thích nhất là ly cà phê sữa đá, uống chậm rãi bên hiên nhà, nghe chim hót.
+          Thật tuyệt vời! Cuộc sống đôi khi chỉ cần những điều giản dị như vậy.
+          Còn bạn thì sao, điều gì khiến bạn thấy bình yên nhất?
+          Nếu có dịp, mời bạn ghé thăm quê tôi một lần, tôi tin chắc bạn sẽ thích nơi này.
+          Cảm ơn bạn đã lắng nghe, chúc bạn một ngày thật vui và nhiều năng lượng nhé!
+        </div>
         <audio id="cPreview" controls class="hidden" style="margin-top:6px"></audio>
         <label class="fx" style="margin-top:8px"><input type="checkbox" id="cConsent">
           <span>Đây là giọng của tôi, hoặc tôi được người đó cho phép dùng.</span></label>
@@ -606,7 +621,7 @@ async function loadMine(select) {
   $("#mineList").innerHTML = MINE.length ? MINE.map(v => `
     <div class="vt">
       <div class="row" style="justify-content:space-between"><b>${esc(v.name)}</b>
-        <span class="muted">${v.source === "mic" ? "🎙 ghi âm" : "📁 file"} · ${(+v.duration).toFixed(1)} giây · ${v.created}</span></div>
+        <span class="muted">${v.source === "mic" ? "🎙 ghi âm" : "📁 file"} · ${(+v.duration).toFixed(0)} giây${v.segments > 1 ? ` · gộp ${v.segments_used}/${v.segments} đoạn` : ""} · ${v.created}</span></div>
       ${v.sample_url ? `<div class="muted" style="margin-top:4px">Nghe thử giọng clone:</div><audio controls preload="none" src="/files/${v.sample_url}"></audio>`
                      : `<div class="muted">Chưa có bản nghe thử.</div>`}
       <details style="margin-top:2px"><summary class="muted" style="cursor:pointer">Đoạn ghi âm gốc</summary>
@@ -640,11 +655,20 @@ function showMine() {
 $("#vMine").onchange = () => { $('input[name=vmode][value=mine]').checked = true; showMine(); };
 $("#vPreset").onchange = () => { $('input[name=vmode][value=preset]').checked = true; };
 
-function setCloneAudio(blob, src) {
+const REC_MAX = 60;   // the server keeps at most 60 s and needs at least 15 s
+function lengthVerdict(s) {
+  if (s < 15) return `⚠ ${s.toFixed(0)} giây: quá ngắn, cần ít nhất 15 giây`;
+  if (s < 30) return `${s.toFixed(0)} giây: dùng được, nên ghi dài hơn (45–60 giây) để giọng giống hơn`;
+  if (s < 45) return `${s.toFixed(0)} giây: khá, ghi tới 45–60 giây sẽ tốt nhất`;
+  return `✓ ${Math.min(s, REC_MAX).toFixed(0)} giây: tốt nhất` + (s > REC_MAX ? ` (chỉ dùng ${REC_MAX} giây đầu)` : "");
+}
+function setCloneAudio(blob, src, secs) {
   CLONE_BLOB = blob; CLONE_SRC = src;
   const a = $("#cPreview"); a.src = URL.createObjectURL(blob); a.classList.remove("hidden");
+  const show = s => { if (isFinite(s) && s > 0) $("#recTimer").textContent = lengthVerdict(s); };
+  if (secs) show(secs); else a.onloadedmetadata = () => show(a.duration);
 }
-$("#cFile").onchange = e => { const f = e.target.files[0]; if (f) setCloneAudio(f, "upload"); };
+$("#cFile").onchange = e => { const f = e.target.files[0]; if (f) { $("#recBar").classList.add("hidden"); setCloneAudio(f, "upload"); } };
 
 let recorder = null, recTick = null;
 $("#btnRec").onclick = async () => {
@@ -659,18 +683,20 @@ $("#btnRec").onclick = async () => {
     stream.getTracks().forEach(t => t.stop());
     clearInterval(recTick); recorder = null;
     $("#btnRec").textContent = "🎙 Ghi âm lại"; $("#readHint").classList.add("hidden");
-    const secs = $("#recTimer").dataset.s;
-    $("#recTimer").textContent = `Đã ghi ${secs} giây`;
-    setCloneAudio(new Blob(chunks, { type: chunks[0]?.type || "audio/webm" }), "mic");
+    // webm from MediaRecorder has no duration header, so use the timer's count
+    setCloneAudio(new Blob(chunks, { type: chunks[0]?.type || "audio/webm" }), "mic", +$("#recTimer").dataset.s);
   };
   recorder.start();
   const t0 = Date.now();
-  $("#btnRec").textContent = "⏹ Dừng"; $("#readHint").classList.remove("hidden");
+  $("#btnRec").textContent = "⏹ Dừng"; $("#readHint").classList.remove("hidden"); $("#recBar").classList.remove("hidden");
   recTick = setInterval(() => {
     const s = (Date.now() - t0) / 1000;
     $("#recTimer").dataset.s = s.toFixed(1);
-    $("#recTimer").textContent = `● Đang ghi ${s.toFixed(0)}/12 giây`;
-    if (s >= 12) recorder?.stop();   // longer clips don't clone better
+    $("#recBar i").style.width = `${Math.min(100, s / REC_MAX * 100)}%`;
+    $("#recBar i").style.background = s >= 45 ? "var(--ok)" : "";
+    $("#recTimer").textContent = `● Đang ghi ${s.toFixed(0)}/${REC_MAX} giây` +
+      (s < 15 ? " (cần ít nhất 15)" : s < 45 ? " (đọc tiếp tới vạch xanh 45 giây)" : " ✓ đủ tốt, bấm Dừng hoặc đọc tiếp");
+    if (s >= REC_MAX) recorder?.stop();
   }, 200);
 };
 
@@ -689,6 +715,7 @@ $("#btnClone").onclick = async () => {
       b.disabled = false;
       if (j.status !== "done") return;
       $("#cName").value = ""; CLONE_BLOB = null; $("#cPreview").classList.add("hidden"); $("#recTimer").textContent = "";
+      $("#recBar").classList.add("hidden");
       $("#cConsent").checked = false; $("#btnRec").textContent = "🎙 Ghi âm";
       await loadMine(id);
       $('input[name=vmode][value=mine]').checked = true;

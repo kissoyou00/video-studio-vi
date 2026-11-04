@@ -3,7 +3,7 @@
 Ứng dụng web chạy **hoàn toàn trên máy** (Windows): dựng video theo lời nói và tạo giọng đọc tiếng Việt bằng AI. Không cần tài khoản, không cần internet sau khi cài, không tốn phí API.
 
 - **Dựng video:** chuyển giọng nói thành chữ (Whisper offline), bấm vào chữ để cắt, tự cắt khoảng lặng, khung 9:16 / 16:9 / 1:1 / 4:5, chỉnh màu, phụ đề in lên video, 15 hiệu ứng tick chọn (Fade, Dip to black, Jump cut zoom, Ken Burns, Hook, Lower third, End card…), giọng đọc AI và nhạc nền tự nhỏ lại khi có tiếng nói, xuất chuẩn âm lượng mạng xã hội (-14 LUFS).
-- **Tạo giọng đọc:** VieNeu-TTS v3, 25 giọng Bắc/Nam/Trung, hoặc **clone giọng** từ ghi âm micro / file 3–12 giây rồi **lưu lại và đặt tên** (thư viện "Giọng của tôi"), xuất MP3/WAV + phụ đề .srt. Giọng mặc định *Hải Đăng*, phong cách "rõ chữ". Được dùng thương mại (Apache-2.0).
+- **Tạo giọng đọc:** VieNeu-TTS v3, 25 giọng Bắc/Nam/Trung, hoặc **clone giọng** từ ghi âm micro / file 45–60 giây (gộp nhiều đoạn cho giọng ổn định) rồi **lưu lại và đặt tên** (thư viện "Giọng của tôi"), xuất MP3/WAV + phụ đề .srt. Giọng mặc định *Hải Đăng*, phong cách "rõ chữ". Được dùng thương mại (Apache-2.0).
 
 Hướng dẫn sử dụng chi tiết: [HUONG-DAN.md](HUONG-DAN.md).
 

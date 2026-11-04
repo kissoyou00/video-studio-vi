@@ -58,9 +58,11 @@ Chuyển cảnh và whoosh chỉ xảy ra ở chỗ chuyển giữa **hai clip k
 ### Clone giọng và lưu lại ("Giọng của tôi")
 
 1. Ở mục **🧬 Clone giọng mới**, đặt **tên giọng** (ví dụ "Giọng anh Tuấn").
-2. Bấm **🎙 Ghi âm** rồi đọc to câu gợi ý (tự dừng sau 12 giây, bấm **⏹ Dừng** để dừng sớm), hoặc **📁 Chọn file** ghi âm / video có sẵn. Cần 3–12 giây nói rõ, đều giọng, ít tiếng ồn. Lần đầu ghi âm, trình duyệt sẽ hỏi quyền dùng micro.
-3. Tick xác nhận đây là giọng của bạn hoặc bạn được phép dùng, bấm **Lưu giọng**. Ứng dụng phân tích giọng một lần và đọc thử một câu để bạn nghe ngay.
+2. Bấm **🎙 Ghi âm** rồi đọc to đoạn văn gợi ý, hoặc **📁 Chọn file** ghi âm / video có sẵn. Nên dài **45–60 giây** (ít nhất 15 giây): nói rõ, tự nhiên, ít tiếng ồn, chỉ một người nói. Thanh tiến trình có vạch xanh ở 45 giây; ghi âm tự dừng ở 60 giây. File dài hơn 60 giây chỉ dùng 60 giây đầu. Lần đầu ghi âm, trình duyệt sẽ hỏi quyền dùng micro.
+3. Tick xác nhận đây là giọng của bạn hoặc bạn được phép dùng, bấm **Lưu giọng**. Ứng dụng phân tích giọng một lần (khoảng 20–30 giây với đoạn 60 giây) và đọc thử một câu để bạn nghe ngay.
 4. Giọng đã lưu nằm trong danh sách **Giọng của tôi**: nghe thử, nghe đoạn ghi âm gốc, **Dùng giọng này**, **Đổi tên**, **Xoá**. Chọn "Giọng của tôi" ở mục **2. Giọng** khi tạo giọng đọc.
+
+**Vì sao nên ghi dài?** Model giọng chỉ nhận đoạn mẫu ngắn (khoảng 7 giây), nên ứng dụng cắt đoạn dài thành nhiều đoạn ~7 giây ở chỗ ngắt nghỉ, phân tích từng đoạn rồi **lấy trung bình "dấu vân giọng"** của tất cả (bỏ đoạn lạc giọng như có tiếng ồn, người khác nói). Càng nhiều đoạn, giọng clone càng ổn định và giống hơn. Danh sách "Giọng của tôi" ghi rõ đã gộp bao nhiêu đoạn.
 
 Giọng đã lưu ở `%USERPROFILE%\VideoStudio\refs`. Tên giọng không được trùng nhau. Xoá một giọng không xoá các bản giọng đọc đã tạo bằng giọng đó.
 
