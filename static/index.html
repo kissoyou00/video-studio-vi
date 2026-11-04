@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Studio</title>
+<style>
+  :root {
+    --bg: #f4f2ee; --panel: #ffffff; --ink: #1f1c18; --muted: #6d665c; --line: #e3ded5;
+    --accent: #d94f2b; --accent-ink: #ffffff; --ok: #2e7d4f; --cut: #c62828; --chip: #efe9df; --filler: #fff1c2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #171512; --panel: #211e1a; --ink: #f1ece4; --muted: #a39a8c; --line: #38332c;
+            --accent: #ff7a50; --accent-ink: #1b0f0a; --ok: #6fcf97; --cut: #ff6b6b; --chip: #2d2924; --filler: #4a3f1a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 24px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+  header h1 span { color: var(--accent); }
+  .tabs { display: flex; gap: 4px; }
+  .tabs button { border: 0; background: none; color: var(--muted); padding: 8px 14px; border-radius: 8px; font: inherit; cursor: pointer; }
+  .tabs button.on { background: var(--chip); color: var(--ink); font-weight: 600; }
+  main { padding: 20px 24px 60px; max-width: 1400px; margin: 0 auto; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+  @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 18px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .n { background: var(--accent); color: var(--accent-ink); border-radius: 50%; width: 22px; height: 22px; display: inline-grid; place-items: center; font-size: 12px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .muted { color: var(--muted); font-size: 13px; }
+  label.f { display: block; margin: 10px 0 4px; font-size: 13px; color: var(--muted); }
+  input, select, textarea, button { font: inherit; color: inherit; }
+  input[type=text], input[type=number], select, textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; width: 100%; }
+  input[type=number] { width: 90px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  textarea { min-height: 220px; resize: vertical; line-height: 1.6; }
+  .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+  .btn:hover { border-color: var(--muted); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.small { padding: 3px 9px; font-size: 13px; }
+  .src { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .src:first-child { border-top: 0; }
+  .src .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .src .opts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+  .src .opts select { width: auto; }
+  .src .opts input[type=number] { width: 70px; padding: 4px 6px; }
+  .move { display: flex; flex-direction: column; }
+  .move button { border: 0; background: none; cursor: pointer; color: var(--muted); padding: 0 4px; line-height: 1; }
+  .badge { font-size: 12px; padding: 1px 8px; border-radius: 99px; background: var(--chip); color: var(--muted); }
+  .badge.ok { color: var(--ok); }
+  .tx { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .tx:first-of-type { border-top: 0; padding-top: 0; }
+  @media (max-width: 700px) { .tx { grid-template-columns: 1fr; } }
+  .tx video { width: 100%; border-radius: 8px; background: #000; max-height: 360px; }
+  .words { line-height: 2.1; max-height: 420px; overflow: auto; padding-right: 6px; user-select: none; }
+  .w { padding: 2px 3px; border-radius: 4px; cursor: pointer; }
+  .w:hover { background: var(--chip); }
+  .w.cut { color: var(--cut); text-decoration: line-through; opacity: .7; }
+  .w.filler { background: var(--filler); }
+  .w.playing { outline: 2px solid var(--accent); }
+  .gap { font-size: 11px; color: var(--muted); background: var(--chip); border-radius: 4px; padding: 1px 5px; margin: 0 3px; }
+  .gap.cut { color: var(--cut); text-decoration: line-through; }
+  .job { margin-top: 12px; }
+  .job pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: 12px/1.5 Consolas, monospace; max-height: 160px; overflow: auto; white-space: pre-wrap; margin: 6px 0 0; }
+  .bar { height: 4px; background: var(--chip); border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 40%; background: var(--accent); animation: slide 1.2s infinite ease-in-out; }
+  @keyframes slide { from { margin-left: -40%; } to { margin-left: 100%; } }
+  .render { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+  .render video { width: 100%; max-height: 420px; border-radius: 8px; background: #000; }
+  .err { color: var(--cut); }
+  .total { font-size: 26px; font-weight: 700; }
+  .vt { border-top: 1px solid var(--line); padding: 12px 0; }
+  .vt:first-child { border-top: 0; }
+  .vt audio, .card audio { width: 100%; height: 36px; }
+  .lines { margin-top: 8px; display: none; }
+  .lines.open { display: block; }
+  .line { display: grid; grid-template-columns: 30px minmax(0, 1fr) 220px; gap: 8px; align-items: center; font-size: 14px; padding: 3px 0; }
+  .hidden { display: none !important; }
+  .fxg { margin: 14px 0 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--accent); }
+  .fx { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 6px; align-items: start; padding: 5px 0; font-size: 13.5px; color: var(--muted); cursor: pointer; }
+  .fx input[type=checkbox] { margin-top: 3px; accent-color: var(--accent); }
+  .fx b { display: block; color: var(--ink); font-size: 14px; }
+  .fx input[type=text] { margin-top: 4px; padding: 5px 8px; font-size: 13px; }
+  .drop { border: 2px dashed var(--line); border-radius: 10px; padding: 14px; text-align: center; color: var(--muted); }
+  .drop.over { border-color: var(--accent); color: var(--ink); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Video <span>Studio</span></h1>
+  <nav class="tabs">
+    <button data-tab="edit" class="on">🎬 Dựng video</button>
+    <button data-tab="voice">🎙️ Tạo giọng đọc</button>
+  </nav>
+  <span class="muted" id="workdir" style="margin-left:auto"></span>
+  <button class="btn small" id="btnQuit" title="Tắt Video Studio (ứng dụng chạy ẩn, không có cửa sổ cmd)">⏻ Tắt ứng dụng</button>
+</header>
+
+<main>
+<!-- ============ DỰNG VIDEO ============ -->
+<section id="tab-edit">
+  <div class="card">
+    <div class="row">
+      <select id="projSel" style="max-width:320px"></select>
+      <span class="muted">hoặc</span>
+      <input type="text" id="projName" placeholder="Tên dự án mới, ví dụ: Video bé đàn piano" style="max-width:320px">
+      <button class="btn primary" id="projCreate">Tạo dự án</button>
+    </div>
+  </div>
+
+  <div id="projBody" class="hidden">
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2><span class="n">1</span> Clip nguồn</h2>
+        <div class="drop" id="drop">Kéo thả video vào đây, hoặc <label style="color:var(--accent);cursor:pointer">chọn file<input type="file" id="upFiles" accept="video/*" multiple hidden></label></div>
+        <div id="upStatus" class="muted" style="margin-top:6px"></div>
+        <div id="sources" style="margin-top:8px"></div>
+        <div class="row" style="margin-top:12px">
+          <select id="lang" style="width:auto">
+            <option value="vi">Tiếng Việt</option><option value="en">Tiếng Anh</option><option value="auto">Tự nhận ngôn ngữ</option>
+          </select>
+          <button class="btn primary" id="btnTranscribe">Chuyển giọng nói thành chữ</button>
+          <span class="muted">Chạy offline bằng Whisper. Clip đã chuyển rồi sẽ được bỏ qua.</span>
+        </div>
+        <div class="job hidden" id="jobTranscribe"></div>
+      </div>
+
+      <div class="card">
+        <h2><span class="n">2</span> Sửa theo lời nói</h2>
+        <p class="muted" style="margin:0 0 6px">Bấm vào chữ để <b>cắt</b> đoạn đó (bấm lại để giữ). Giữ <b>Shift</b> rồi bấm để chọn cả khoảng. <b>Bấm đúp</b> để nghe tại chữ đó. Ô <span class="gap">⏸ 1.2s</span> là khoảng lặng; khoảng lặng gạch đỏ sẽ bị cắt.</p>
+        <div id="transcripts"><p class="muted">Chưa có bản chữ. Tải clip lên rồi bấm "Chuyển giọng nói thành chữ".</p></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2><span class="n">3</span> Thiết lập</h2>
+        <label class="f">Khung hình</label>
+        <select data-set="aspect">
+          <option value="9:16">9:16 (TikTok, Reels, Shorts)</option><option value="16:9">16:9 (YouTube)</option>
+          <option value="1:1">1:1 (vuông)</option><option value="4:5">4:5 (Facebook, Instagram)</option><option value="original">Giữ như clip gốc</option>
+        </select>
+        <label class="f">Màu</label>
+        <select data-set="grade">
+          <option value="none">Giữ nguyên</option><option value="subtle">Tự nhiên, sạch hơn chút</option>
+          <option value="punch">Tươi, rõ nét hơn</option><option value="warm">Ấm, kiểu điện ảnh</option>
+        </select>
+        <label class="f">Phụ đề in trên video</label>
+        <select data-set="subtitles">
+          <option value="none">Không có</option><option value="speech">Theo lời nói trong video</option><option value="voice">Theo giọng đọc AI</option>
+        </select>
+        <label class="f">Cắt khoảng lặng dài hơn <b id="maxPauseVal"></b></label>
+        <input type="range" data-set="max_pause" min="0" max="3" step="0.1">
+        <div class="muted">Kéo về 0 để không tự cắt khoảng lặng.</div>
+        <label class="f">Lề mỗi chỗ cắt <b id="padVal"></b></label>
+        <input type="range" data-set="pad_ms" min="30" max="250" step="10">
+        <label class="row" style="margin-top:10px"><input type="checkbox" data-set="remove_fillers"> Tự bỏ tiếng đệm (ừm, à, ờ…)</label>
+      </div>
+
+      <div class="card">
+        <h2><span class="n">4</span> Hiệu ứng dựng video</h2>
+        <p class="muted" style="margin:0">Tick để bật. Chuyển cảnh và whoosh chỉ có ở chỗ chuyển giữa hai clip khác nhau. Phụ đề luôn nằm trên cùng, không bị che.</p>
+
+        <div class="fxg">Cắt ghép &amp; chuyển cảnh</div>
+        <label class="fx"><input type="checkbox" data-set="fx_fade"><span><b>Fade in / Fade out</b> Hiện dần ở đầu, tối dần ở cuối (cả hình và tiếng)</span></label>
+        <div class="fx"><span></span><span><b>Transition</b> Chuyển cảnh giữa các clip
+          <select data-set="fx_transition" style="margin-top:4px"><option value="none">Cắt thẳng (hard cut)</option><option value="dip">Dip to black: nháy đen</option><option value="flash">Flash: nháy trắng</option></select></span></div>
+        <label class="fx"><input type="checkbox" data-set="fx_jump_zoom"><span><b>Jump cut zoom (punch-in)</b> Phóng to/thu nhỏ xen kẽ ở mỗi chỗ cắt trong cùng clip, giấu vết cắt</span></label>
+        <label class="fx"><input type="checkbox" data-set="fx_ken_burns"><span><b>Ken Burns</b> Phóng to chậm ở các clip "giữ nguyên cả clip"</span></label>
+        <label class="fx"><input type="checkbox" data-set="fx_freeze_end"><span><b>Freeze frame</b> Dừng hình cuối thêm 2 giây</span></label>
+
+        <div class="fxg">Chữ &amp; đồ hoạ</div>
+        <label class="fx"><input type="checkbox" data-set="fx_hook_on"><span><b>Hook</b> Tiêu đề lớn 3 giây đầu để giữ người xem
+          <input type="text" data-set="fx_hook" placeholder="Ví dụ: Bé 6 tuổi đàn piano"></span></label>
+        <label class="fx"><input type="checkbox" data-set="fx_lower_on"><span><b>Lower third</b> Thanh tên ở giây 1–5
+          <input type="text" data-set="fx_lower" placeholder="Ví dụ: Minh Anh, 6 tuổi"></span></label>
+        <label class="fx"><input type="checkbox" data-set="fx_end_on"><span><b>End card / Outro</b> Lời kết ở 2,5 giây cuối
+          <input type="text" data-set="fx_end" placeholder="Cảm ơn mọi người đã xem!"></span></label>
+        <label class="fx"><input type="checkbox" data-set="fx_watermark_on"><span><b>Watermark</b> Tên kênh mờ ở góc trên phải
+          <input type="text" data-set="fx_watermark" placeholder="Ví dụ: @tenkenh"></span></label>
+        <label class="fx"><input type="checkbox" data-set="fx_progress"><span><b>Progress bar</b> Thanh tiến trình chạy ở mép trên</span></label>
+
+        <div class="fxg">Hình ảnh</div>
+        <label class="fx"><input type="checkbox" data-set="fx_letterbox"><span><b>Letterbox</b> Viền đen trên dưới kiểu điện ảnh</span></label>
+        <label class="fx"><input type="checkbox" data-set="fx_vignette"><span><b>Vignette</b> Tối nhẹ 4 góc, tập trung vào giữa</span></label>
+        <label class="fx"><input type="checkbox" data-set="fx_sharpen"><span><b>Sharpen</b> Làm nét, hợp với video độ phân giải thấp</span></label>
+
+        <div class="fxg">Âm thanh</div>
+        <label class="fx"><input type="checkbox" data-set="fx_denoise"><span><b>Noise reduction</b> Giảm tiếng ồn nền của tiếng gốc</span></label>
+        <label class="fx"><input type="checkbox" data-set="fx_whoosh"><span><b>SFX whoosh</b> Tiếng vút ở mỗi chỗ chuyển clip</span></label>
+        <div class="muted" style="margin-top:8px">Chữ hiệu ứng không hiện được emoji (sẽ tự bỏ).</div>
+      </div>
+
+      <div class="card">
+        <h2><span class="n">5</span> Âm thanh</h2>
+        <label class="f">Âm lượng tiếng gốc <b id="origVal"></b></label>
+        <input type="range" data-set="orig_volume" min="0" max="1.5" step="0.05">
+        <label class="f">Giọng đọc AI</label>
+        <select data-set="voice_id" id="voiceSel"></select>
+        <div class="row" style="margin-top:6px">
+          <span class="muted">Bắt đầu ở giây</span><input type="number" data-set="voice_offset" min="0" step="0.1">
+        </div>
+        <label class="f">Âm lượng giọng đọc <b id="voiceVolVal"></b></label>
+        <input type="range" data-set="voice_volume" min="0" max="1.5" step="0.05">
+        <label class="f">Nhạc nền</label>
+        <div class="row"><span id="musicName" class="muted">Chưa có</span>
+          <label class="btn small">Chọn file nhạc<input type="file" id="musicFile" accept="audio/*" hidden></label>
+          <button class="btn small" id="musicClear">Bỏ nhạc</button></div>
+        <label class="f">Âm lượng nhạc <b id="musicVolVal"></b></label>
+        <input type="range" data-set="music_volume" min="0" max="1" step="0.05">
+        <label class="row" style="margin-top:8px"><input type="checkbox" data-set="duck"> Nhạc tự nhỏ lại khi có tiếng nói</label>
+      </div>
+
+      <div class="card">
+        <h2><span class="n">6</span> Xuất video</h2>
+        <div class="muted">Độ dài dự kiến</div>
+        <div class="total" id="planTotal">–</div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="btnPreview">Xem thử nhanh</button>
+          <button class="btn primary" id="btnFinal">Xuất bản hoàn chỉnh</button>
+        </div>
+        <div class="muted" style="margin-top:6px">Xem thử: nửa độ phân giải, nhanh. Hoàn chỉnh: 1080p, chuẩn âm lượng mạng xã hội.</div>
+        <div class="job hidden" id="jobRender"></div>
+        <div id="renders"></div>
+      </div>
+    </div>
+  </div>
+  </div>
+</section>
+
+<!-- ============ TẠO GIỌNG ĐỌC ============ -->
+<section id="tab-voice" class="hidden">
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2><span class="n">1</span> Lời thoại</h2>
+        <p class="muted" style="margin:0 0 8px">Mỗi dòng là một câu (một file MP3, một dòng phụ đề). Viết số bằng chữ khi đọc, dùng dấu <b>|</b> để phụ đề hiện khác lời đọc, ví dụ:<br>
+        <code>Chỉ hai trăm chín mươi chín nghìn đồng thôi! | Chỉ 299.000đ thôi!</code></p>
+        <input type="text" id="vTitle" placeholder="Tên bản giọng (không bắt buộc)" style="margin-bottom:8px">
+        <textarea id="vText" placeholder="Xin chào cả nhà! Hôm nay mình giới thiệu một món đồ siêu xịn nè.&#10;Chỉ hai trăm chín mươi chín nghìn đồng thôi! | Chỉ 299.000đ thôi!&#10;Bấm theo dõi để không bỏ lỡ video tiếp theo nha!"></textarea>
+        <div class="row" style="margin-top:10px">
+          <button class="btn primary" id="btnVoice">Tạo giọng đọc</button>
+          <span class="muted" id="vCount"></span>
+        </div>
+        <div class="job hidden" id="jobVoice"></div>
+      </div>
+      <div class="card">
+        <h2>Các bản giọng đã tạo</h2>
+        <div id="voiceList"><p class="muted">Chưa có.</p></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2><span class="n">2</span> Giọng</h2>
+        <label class="row"><input type="radio" name="vmode" value="preset" checked> Giọng có sẵn</label>
+        <select id="vPreset" style="margin-top:6px"></select>
+        <label class="row" style="margin-top:12px"><input type="radio" name="vmode" value="clone"> Nhái giọng từ đoạn ghi âm</label>
+        <select id="vRef" style="margin-top:6px"></select>
+        <div class="row" style="margin-top:6px">
+          <label class="btn small">Tải đoạn ghi âm (3–8 giây)<input type="file" id="refFile" accept="audio/*,video/*" hidden></label>
+        </div>
+        <div class="muted" style="margin-top:4px">Chỉ nhái giọng của bạn, hoặc giọng bạn được phép dùng.</div>
+        <audio id="refPlay" controls class="hidden" style="margin-top:6px"></audio>
+      </div>
+      <div class="card">
+        <h2><span class="n">3</span> Cách đọc</h2>
+        <label class="f">Tốc độ <b id="vSpeedVal"></b></label>
+        <input type="range" id="vSpeed" min="0.85" max="1.2" step="0.01" value="1">
+        <label class="f">Phong cách</label>
+        <select id="vTemp">
+          <option value="0.3">Rõ chữ, chắc giọng (đề xuất)</option>
+          <option value="0.5">Cân bằng</option>
+          <option value="0.8">Biểu cảm hơn, có thể kém rõ</option>
+        </select>
+        <label class="f">Nghỉ giữa các câu <b id="vGapVal"></b></label>
+        <input type="range" id="vGap" min="0" max="1.5" step="0.05" value="0.4">
+        <div class="muted" style="margin-top:10px">Chạy offline bằng VieNeu-TTS v3 (được dùng thương mại). Lần tạo đầu tiên mất thêm khoảng 45 giây để nạp model.</div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const api = async (method, url, body) => {
+  const opt = { method, headers: {} };
+  if (body instanceof FormData) opt.body = body;
+  else if (body !== undefined) { opt.body = JSON.stringify(body); opt.headers["Content-Type"] = "application/json"; }
+  const r = await fetch(url, opt);
+  if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
+  return r.json();
+};
+const fmt = s => { s = Math.max(0, +s || 0); const m = Math.floor(s / 60); return m ? `${m} phút ${(s % 60).toFixed(0)} giây` : `${s.toFixed(1)} giây`; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const FILLERS = new Set(["ừm", "ừ", "ờ", "ơ", "à", "uh", "um", "umm", "uhm", "hmm", "ờm", "ừmm"]);
+const normW = t => t.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "").trim();
+
+let INFO = null, P = null, WORDS = {}, VOICES = [], LAST_CLICK = {};
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+// ---------- tabs ----------
+$$(".tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+function showTab(t) {
+  $$(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  $("#tab-edit").classList.toggle("hidden", t !== "edit");
+  $("#tab-voice").classList.toggle("hidden", t !== "voice");
+  store.set("tab", t);
+}
+
+// ---------- jobs ----------
+function watchJob(jid, box, onDone) {
+  box.classList.remove("hidden");
+  box.innerHTML = `<div class="bar"><i></i></div><pre></pre>`;
+  const pre = $("pre", box);
+  const tick = async () => {
+    let j;
+    try { j = await api("GET", `/api/jobs/${jid}`); } catch (e) { setTimeout(tick, 2000); return; }
+    pre.textContent = j.log.join("\n");
+    pre.scrollTop = pre.scrollHeight;
+    if (j.status === "running") { setTimeout(tick, 1000); return; }
+    $(".bar", box)?.remove();
+    if (j.status === "error") box.insertAdjacentHTML("afterbegin", `<div class="err">Lỗi: ${esc(j.error)}</div>`);
+    else box.insertAdjacentHTML("afterbegin", `<div style="color:var(--ok)">Xong sau ${fmt(j.elapsed)}.</div>`);
+    onDone && onDone(j);
+  };
+  tick();
+}
+
+// ---------- projects ----------
+async function loadProjects(select) {
+  const list = await api("GET", "/api/projects");
+  const sel = $("#projSel");
+  sel.innerHTML = `<option value="">— Chọn dự án —</option>` + list.map(p => `<option value="${p.id}">${esc(p.name)} (${p.sources} clip)</option>`).join("");
+  const want = select ?? store.get("project");
+  if (want && list.some(p => p.id === want)) { sel.value = want; await openProject(want); }
+}
+$("#projSel").onchange = e => e.target.value ? openProject(e.target.value) : ($("#projBody").classList.add("hidden"));
+$("#projCreate").onclick = async () => {
+  const r = await api("POST", "/api/projects", { name: $("#projName").value });
+  $("#projName").value = "";
+  await loadProjects(r.id);
+};
+
+async function openProject(id) {
+  P = await api("GET", `/api/projects/${id}`);
+  WORDS = {};
+  store.set("project", id);
+  $("#projBody").classList.remove("hidden");
+  renderSources(); renderSettings(); renderRenders(); updateTotal();
+  await renderTranscripts();
+}
+
+async function saveProject(part) {
+  // Keep the local edits as the source of truth; a slower response must not undo a newer click.
+  const r = await api("PUT", `/api/projects/${P.id}`, part);
+  P.plan_total = r.plan_total;
+  P.renders = r.renders;
+  updateTotal();
+}
+let saveTimer = null;
+function saveSoon(part) { clearTimeout(saveTimer); saveTimer = setTimeout(() => saveProject(part), 350); }
+function srcPayload() { return P.sources.map(s => ({ id: s.id, include: s.include, mode: s.mode, trim_start: s.trim_start, trim_end: s.trim_end, removed: s.removed })); }
+function updateTotal() { $("#planTotal").textContent = fmt(P.plan_total); }
+
+// ---------- sources ----------
+function renderSources() {
+  const box = $("#sources");
+  if (!P.sources.length) { box.innerHTML = `<p class="muted">Chưa có clip nào.</p>`; return; }
+  box.innerHTML = P.sources.map((s, i) => `
+    <div class="src" data-i="${i}">
+      <div class="move"><button data-act="up" title="Lên">▲</button><button data-act="down" title="Xuống">▼</button></div>
+      <input type="checkbox" data-act="include" ${s.include ? "checked" : ""} title="Dùng clip này">
+      <div>
+        <div class="name" title="${esc(s.name)}">${esc(s.name)}</div>
+        <div class="opts">
+          <span class="badge">${fmt(s.duration)} · ${s.width}×${s.height}</span>
+          ${s.transcribed ? `<span class="badge ok">✓ ${s.words ?? ""} chữ</span>` : `<span class="badge">chưa chuyển chữ</span>`}
+          <select data-act="mode">
+            <option value="speech" ${s.mode === "speech" ? "selected" : ""}>Cắt theo lời nói</option>
+            <option value="full" ${s.mode === "full" ? "selected" : ""}>Giữ nguyên cả clip</option>
+          </select>
+          <span class="${s.mode === "full" ? "" : "hidden"}">bỏ đầu <input type="number" data-act="trim_start" value="${s.trim_start || 0}" min="0" step="0.1">s
+            bỏ cuối <input type="number" data-act="trim_end" value="${s.trim_end || 0}" min="0" step="0.1">s</span>
+        </div>
+      </div>
+      <button class="btn small" data-act="del" title="Xoá clip">✕</button>
+    </div>`).join("");
+  $$(".src", box).forEach(row => {
+    const i = +row.dataset.i, s = P.sources[i];
+    row.addEventListener("change", e => {
+      const act = e.target.dataset.act;
+      if (act === "include") s.include = e.target.checked;
+      if (act === "mode") s.mode = e.target.value;
+      if (act === "trim_start" || act === "trim_end") s[act] = +e.target.value || 0;
+      saveProject({ sources: srcPayload() }).then(() => { renderSources(); renderTranscripts(); });
+    });
+    row.addEventListener("click", async e => {
+      const act = e.target.dataset.act;
+      if (act === "up" || act === "down") {
+        const j = act === "up" ? i - 1 : i + 1;
+        if (j < 0 || j >= P.sources.length) return;
+        [P.sources[i], P.sources[j]] = [P.sources[j], P.sources[i]];
+        await saveProject({ sources: srcPayload() }); renderSources(); renderTranscripts();
+      }
+      if (act === "del" && confirm(`Xoá clip "${s.name}" khỏi dự án?`)) {
+        P = { ...(await api("DELETE", `/api/projects/${P.id}/sources/${s.id}`)), id: P.id };
+        renderSources(); renderTranscripts(); updateTotal();
+      }
+    });
+  });
+}
+
+async function uploadFiles(files) {
+  if (!files.length) return;
+  const fd = new FormData();
+  [...files].forEach(f => fd.append("files", f));
+  $("#upStatus").textContent = `Đang tải lên ${files.length} file…`;
+  try {
+    P = { ...(await api("POST", `/api/projects/${P.id}/upload`, fd)), id: P.id };
+    $("#upStatus").textContent = "Đã tải lên. Bấm \"Chuyển giọng nói thành chữ\" để sửa theo lời nói.";
+    renderSources(); updateTotal();
+  } catch (e) { $("#upStatus").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+$("#upFiles").onchange = e => uploadFiles(e.target.files);
+const drop = $("#drop");
+["dragover", "dragenter"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => uploadFiles(e.dataTransfer.files));
+
+$("#btnTranscribe").onclick = async () => {
+  const b = $("#btnTranscribe"); b.disabled = true;
+  const { job } = await api("POST", `/api/projects/${P.id}/transcribe`, { language: $("#lang").value });
+  watchJob(job, $("#jobTranscribe"), async () => { b.disabled = false; await openProject(P.id); });
+};
+
+// ---------- transcript editor ----------
+async function renderTranscripts() {
+  const box = $("#transcripts");
+  const srcs = P.sources.filter(s => s.include && s.mode === "speech" && s.transcribed);
+  if (!srcs.length) { box.innerHTML = `<p class="muted">Chưa có clip nào ở chế độ "Cắt theo lời nói" đã chuyển chữ.</p>`; return; }
+  for (const s of srcs) if (!WORDS[s.id]) WORDS[s.id] = await api("GET", `/api/projects/${P.id}/words/${s.id}`);
+  box.innerHTML = srcs.map(s => `
+    <div class="tx" data-id="${s.id}">
+      <div><video src="/files/${s.url}" controls preload="metadata"></video>
+        <div class="row" style="margin-top:6px"><button class="btn small" data-act="reset">Giữ lại tất cả</button></div>
+        <div class="muted" style="margin-top:4px">${esc(s.name)}</div></div>
+      <div class="words"></div>
+    </div>`).join("");
+  $$(".tx", box).forEach(tx => drawWords(tx, P.sources.find(s => s.id === tx.dataset.id)));
+}
+
+function drawWords(tx, src) {
+  const words = WORDS[src.id] || [], removed = new Set(src.removed || []);
+  const maxPause = +P.settings.max_pause || 0;
+  const box = $(".words", tx), video = $("video", tx);
+  let html = "";
+  words.forEach((w, i) => {
+    if (i > 0) {
+      const g = w.s - words[i - 1].e;
+      if (g >= 0.4) html += `<span class="gap ${maxPause && g > maxPause ? "cut" : ""}">⏸ ${g.toFixed(1)}s</span>`;
+    }
+    const filler = FILLERS.has(normW(w.t));
+    const cut = removed.has(i) || (filler && P.settings.remove_fillers);
+    html += `<span class="w ${cut ? "cut" : ""} ${filler ? "filler" : ""}" data-i="${i}">${esc(w.t)}</span> `;
+  });
+  box.innerHTML = html || `<p class="muted">Không nghe được lời nói nào. Nên chọn "Giữ nguyên cả clip".</p>`;
+  // Always edit the live source object: saveProject() replaces P with the server's copy,
+  // so a captured `src` would go stale and the next edit would be lost.
+  const live = () => P.sources.find(s => s.id === src.id);
+  box.onclick = e => {
+    const el = e.target.closest(".w"); if (!el) return;
+    const src = live();
+    const i = +el.dataset.i, set = new Set(src.removed || []), last = LAST_CLICK[src.id];
+    // Shift-click applies the anchor word's new state to the whole range
+    const target = e.shiftKey && last !== undefined ? set.has(last) : !set.has(i);
+    const [a, b] = e.shiftKey && last !== undefined ? [Math.min(last, i), Math.max(last, i)] : [i, i];
+    for (let k = a; k <= b; k++) target ? set.add(k) : set.delete(k);
+    LAST_CLICK[src.id] = i;   // survives the redraw below
+    src.removed = [...set].sort((x, y) => x - y);
+    drawWords(tx, src);
+    saveSoon({ sources: srcPayload() });
+  };
+  box.ondblclick = e => {
+    const el = e.target.closest(".w"); if (!el) return;
+    video.currentTime = Math.max(0, words[+el.dataset.i].s - 0.3); video.play();
+  };
+  video.ontimeupdate = () => {
+    const t = video.currentTime;
+    $$(".w.playing", box).forEach(x => x.classList.remove("playing"));
+    const i = words.findIndex(w => t >= w.s && t <= w.e);
+    if (i >= 0) $(`.w[data-i="${i}"]`, box)?.classList.add("playing");
+  };
+  $('[data-act="reset"]', tx).onclick = () => { const s = live(); s.removed = []; drawWords(tx, s); saveSoon({ sources: srcPayload() }); };
+}
+
+// ---------- settings ----------
+function renderSettings() {
+  const s = P.settings;
+  $$("[data-set]").forEach(el => {
+    const k = el.dataset.set;
+    if (el.type === "checkbox") el.checked = !!s[k]; else el.value = s[k] ?? "";
+  });
+  $("#lang").value = s.language || "vi";
+  $("#musicName").textContent = s.music ? s.music.split("/").pop() : "Chưa có";
+  labels();
+}
+function labels() {
+  const s = P.settings;
+  $("#maxPauseVal").textContent = +s.max_pause ? `${(+s.max_pause).toFixed(1)} giây` : "(tắt)";
+  $("#padVal").textContent = `${s.pad_ms} ms`;
+  $("#origVal").textContent = `${Math.round(s.orig_volume * 100)}%`;
+  $("#voiceVolVal").textContent = `${Math.round(s.voice_volume * 100)}%`;
+  $("#musicVolVal").textContent = `${Math.round(s.music_volume * 100)}%`;
+}
+$$("[data-set]").forEach(el => el.addEventListener(el.type === "range" ? "input" : "change", () => {
+  const k = el.dataset.set;
+  let v = el.type === "checkbox" ? el.checked : el.value;
+  if (el.type === "range" || el.type === "number") v = +v;
+  P.settings[k] = v;
+  labels();
+  if (k === "max_pause" || k === "remove_fillers") $$(".tx").forEach(tx => drawWords(tx, P.sources.find(s => s.id === tx.dataset.id)));
+  saveSoon({ settings: { [k]: v } });
+}));
+$("#lang").onchange = e => saveSoon({ settings: { language: e.target.value } });
+$("#musicFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const fd = new FormData(); fd.append("file", f);
+  P = { ...(await api("POST", `/api/projects/${P.id}/music`, fd)), id: P.id };
+  renderSettings();
+};
+$("#musicClear").onclick = () => { P.settings.music = ""; renderSettings(); saveProject({ settings: { music: "" } }); };
+
+// ---------- render ----------
+async function doRender(quality) {
+  const btns = [$("#btnPreview"), $("#btnFinal")]; btns.forEach(b => b.disabled = true);
+  try {
+    await saveProject({ sources: srcPayload(), settings: P.settings });
+    const { job } = await api("POST", `/api/projects/${P.id}/render`, { quality });
+    watchJob(job, $("#jobRender"), async () => { btns.forEach(b => b.disabled = false); P = { ...(await api("GET", `/api/projects/${P.id}`)), id: P.id }; renderRenders(); });
+  } catch (e) { btns.forEach(b => b.disabled = false); alert(e.message); }
+}
+$("#btnPreview").onclick = () => doRender("preview");
+$("#btnFinal").onclick = () => doRender("final");
+function renderRenders() {
+  const list = (P.renders || []).filter(r => r.exists);
+  $("#renders").innerHTML = list.map((r, i) => `
+    <div class="render">
+      <div class="row" style="justify-content:space-between">
+        <b>${r.quality === "final" ? "Bản hoàn chỉnh" : "Bản xem thử"}</b>
+        <span class="muted">${r.created} · ${fmt(r.duration)} · ${r.width}×${r.height} · ${r.size_mb} MB</span>
+      </div>
+      ${i < 2 ? `<video src="/files/${r.file}" controls preload="metadata" style="margin-top:6px"></video>` : ""}
+      <div class="row" style="margin-top:6px"><a href="/files/${r.file}" download>Tải về</a>
+        <button class="btn small" data-del="${r.file}">Xoá</button>
+        <span class="muted">${esc(INFO.work)}\\${r.file.replaceAll("/", "\\")}</span></div>
+    </div>`).join("");
+  $$("[data-del]", $("#renders")).forEach(b => b.onclick = async () => {
+    if (!confirm("Xoá bản dựng này?")) return;
+    P = { ...(await api("DELETE", `/api/projects/${P.id}/renders?file=${encodeURIComponent(b.dataset.del)}`)), id: P.id };
+    renderRenders();
+  });
+}
+
+// ---------- voices ----------
+function voiceOptions() {
+  const groups = { "Bắc": "Miền Bắc", "Nam": "Miền Nam", "Trung": "Miền Trung" };
+  $("#vPreset").innerHTML = Object.entries(groups).map(([r, label]) =>
+    `<optgroup label="${label}">` + INFO.voices.filter(v => v.region === r).map(v =>
+      `<option value="${esc(v.name)}">${esc(v.name)} — ${v.gender} · ${v.style}${v.name === "Hải Đăng" ? " (mặc định)" : ""}</option>`).join("") + `</optgroup>`).join("");
+  $("#vPreset").value = "Hải Đăng";
+}
+async function loadRefs(select) {
+  const refs = await api("GET", "/api/refs");
+  $("#vRef").innerHTML = refs.length ? refs.map(r => `<option value="${esc(r.name)}" data-url="${r.url}">${esc(r.name)}</option>`).join("") : `<option value="">Chưa có đoạn ghi âm</option>`;
+  if (select) $("#vRef").value = select;
+  showRef();
+}
+function showRef() {
+  const opt = $("#vRef").selectedOptions[0], a = $("#refPlay");
+  if (opt?.dataset.url) { a.src = "/files/" + opt.dataset.url; a.classList.remove("hidden"); } else a.classList.add("hidden");
+}
+$("#vRef").onchange = () => { $('input[name=vmode][value=clone]').checked = true; showRef(); };
+$("#vPreset").onchange = () => { $('input[name=vmode][value=preset]').checked = true; };
+$("#refFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const fd = new FormData(); fd.append("file", f);
+  const r = await api("POST", "/api/refs", fd);
+  $('input[name=vmode][value=clone]').checked = true;
+  await loadRefs(r.name);
+};
+const vLabels = () => { $("#vSpeedVal").textContent = `${Math.round($("#vSpeed").value * 100)}%`; $("#vGapVal").textContent = `${(+$("#vGap").value).toFixed(2)} giây`;
+  const n = $("#vText").value.split("\n").filter(l => l.trim() && !l.trim().startsWith("#")).length; $("#vCount").textContent = n ? `${n} câu` : ""; };
+["#vSpeed", "#vGap", "#vText"].forEach(s => $(s).addEventListener("input", vLabels));
+
+$("#btnVoice").onclick = async () => {
+  const clone = $('input[name=vmode]:checked').value === "clone";
+  if (clone && !$("#vRef").value) { alert("Hãy tải lên một đoạn ghi âm để nhái giọng."); return; }
+  const text = $("#vText").value.trim() || $("#vText").placeholder;
+  const b = $("#btnVoice"); b.disabled = true;
+  const { job } = await api("POST", "/api/voices/generate", {
+    text, title: $("#vTitle").value, voice: $("#vPreset").value, ref: clone ? $("#vRef").value : "",
+    speed: +$("#vSpeed").value, temperature: +$("#vTemp").value, top_k: +$("#vTemp").value <= 0.3 ? 10 : 25, gap: +$("#vGap").value });
+  watchJob(job, $("#jobVoice"), async () => { b.disabled = false; await loadVoices(); });
+};
+
+async function loadVoices() {
+  VOICES = await api("GET", "/api/voices");
+  $("#voiceList").innerHTML = VOICES.length ? VOICES.map(v => `
+    <div class="vt">
+      <div class="row" style="justify-content:space-between"><b>${esc(v.title)}</b>
+        <span class="muted">${esc(v.voice)} · ${fmt(v.total)} · ${v.lines.length} câu · ${v.created}</span></div>
+      <audio controls preload="none" src="/files/${v.files.mp3}" style="margin-top:6px"></audio>
+      <div class="row" style="margin-top:4px">
+        <a href="/files/${v.files.mp3}" download>MP3</a><a href="/files/${v.files.wav}" download>WAV</a><a href="/files/${v.files.srt}" download>Phụ đề .srt</a>
+        <button class="btn small" data-lines="${v.id}">Từng câu</button>
+        <button class="btn small" data-use="${v.id}">Dùng cho dự án đang mở</button>
+        <button class="btn small" data-again="${v.id}">Sửa lời, tạo lại</button>
+        <button class="btn small" data-vdel="${v.id}">Xoá</button>
+      </div>
+      <div class="lines" id="lines-${v.id}">${v.lines.map((l, i) => `
+        <div class="line"><span class="muted">${i + 1}</span><span>${esc(l.sub)}</span><audio controls preload="none" src="/files/${l.url}"></audio></div>`).join("")}</div>
+    </div>`).join("") : `<p class="muted">Chưa có.</p>`;
+  $$("[data-lines]").forEach(b => b.onclick = () => $(`#lines-${b.dataset.lines}`).classList.toggle("open"));
+  $$("[data-vdel]").forEach(b => b.onclick = async () => { if (confirm("Xoá bản giọng này?")) { await api("DELETE", `/api/voices/${b.dataset.vdel}`); loadVoices(); } });
+  $$("[data-again]").forEach(b => b.onclick = () => { const v = VOICES.find(x => x.id === b.dataset.again); $("#vText").value = v.text; $("#vTitle").value = v.title; vLabels(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+  $$("[data-use]").forEach(b => b.onclick = async () => {
+    if (!P) { alert("Hãy mở một dự án ở tab Dựng video trước."); return; }
+    P.settings.voice_id = b.dataset.use;
+    await saveProject({ settings: { voice_id: b.dataset.use } });
+    fillVoiceSelect(); renderSettings(); showTab("edit");
+  });
+  fillVoiceSelect();
+}
+function fillVoiceSelect() {
+  $("#voiceSel").innerHTML = `<option value="">Không dùng</option>` + VOICES.map(v => `<option value="${v.id}">${esc(v.title)} (${fmt(v.total)})</option>`).join("");
+  if (P) $("#voiceSel").value = P.settings.voice_id || "";
+}
+
+// ---------- quit (the server runs without a console window) ----------
+$("#btnQuit").onclick = async () => {
+  const { running } = await api("GET", "/api/running");
+  const msg = running.length
+    ? `Đang có việc chưa xong (${running.join(", ")}). Tắt bây giờ sẽ bỏ dở việc đó. Vẫn tắt?`
+    : "Tắt Video Studio? Lần sau mở lại bằng biểu tượng Video Studio trên Desktop.";
+  if (!confirm(msg)) return;
+  try { await api("POST", "/api/shutdown"); } catch {}
+  document.body.innerHTML = `<main style="text-align:center;padding-top:20vh"><h1>Đã tắt Video Studio</h1>
+    <p class="muted">Có thể đóng tab này. Muốn dùng lại, bấm đúp biểu tượng <b>Video Studio</b> trên Desktop.</p></main>`;
+};
+
+// ---------- start ----------
+(async () => {
+  INFO = await api("GET", "/api/info");
+  $("#workdir").textContent = "Dữ liệu: " + INFO.work;
+  voiceOptions(); vLabels();
+  await Promise.all([loadRefs(), loadVoices()]);
+  await loadProjects();
+  showTab(store.get("tab") || "edit");
+})();
+</script>
+</body>
+</html>

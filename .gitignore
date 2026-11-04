@@ -1,0 +1,18 @@
+# Python environments made by install.ps1
+.venv/
+.venv-whisper/
+__pycache__/
+*.pyc
+
+# Logs and local config
+*.log
+.env
+
+# User data lives in ~/VideoStudio, never here; just in case
+projects/
+voices/
+refs/
+*.mp4
+*.mov
+*.wav
+*.mp3

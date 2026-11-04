@@ -1,0 +1,9 @@
+# .venv — web app + VieNeu-TTS voice. Install torch first from the CUDA index (install.ps1 does this):
+#   pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
+transformers==4.57.6   # VieNeu pins this; newer versions break its Qwen3 backbone
+vieneu
+fastapi
+uvicorn[standard]
+python-multipart
+soundfile
+numpy

@@ -1,0 +1,6 @@
+# .venv-whisper — offline transcription (helpers/transcribe.py → transcribe_local.py) and render.py
+faster-whisper
+nvidia-cublas-cu12            # CUDA libraries for faster-whisper's ctranslate2 on Windows
+nvidia-cudnn-cu12>=9,<10
+numpy
+requests
