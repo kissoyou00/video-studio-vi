@@ -22,7 +22,10 @@ licence in `helpers/LICENSE-video-use`. Changes made here:
 | [Ollama](https://ollama.com) (via winget) | MIT | runs the offline script-writing model |
 | [Gemma 3 4B](https://ollama.com/library/gemma3) (`gemma3:4b`) | [Gemma Terms of Use](https://ai.google.dev/gemma/terms) | default offline script writer; commercial use allowed under Google's terms and prohibited-use policy |
 | [Anthropic Python SDK](https://github.com/anthropics/anthropic-sdk-python) (`anthropic`) | MIT | optional Claude engine, user's own API key |
-| PyTorch, FastAPI, Uvicorn, NumPy, soundfile | BSD / MIT | |
+| [rembg](https://github.com/danielgatis/rembg) + `u2net_human_seg` model | MIT / Apache-2.0 | cuts the presenter ("người mẫu") out of their photo |
+| [SadTalker](https://github.com/OpenTalker/SadTalker) at commit `cd4c046` (optional, `install_talker.ps1`) | Apache-2.0 | lip-syncs the presenter's photo to the voice; downloaded into `talker/`, patched by `helpers/patch_sadtalker.py`. Its README forbids uses that infringe portrait rights; the app asks for the person's permission. SadTalker ships 3D face model files derived from the Basel Face Model, which has its own terms; check them before commercial use. |
+| [facexlib](https://github.com/xinntao/facexlib) detection/alignment weights | MIT | face detection for SadTalker |
+| PyTorch, FastAPI, Uvicorn, NumPy, soundfile, Pillow | BSD / MIT / HPND | |
 
 Claude and Gemini are paid or quota-limited online services used only with the user's own API key,
 under the provider's terms.

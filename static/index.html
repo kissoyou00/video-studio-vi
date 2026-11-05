@@ -90,6 +90,22 @@
   .drop { border: 2px dashed var(--line); border-radius: 10px; padding: 14px; text-align: center; color: var(--muted); }
   .drop.over { border-color: var(--accent); color: var(--ink); }
   a { color: var(--accent); }
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 2px; font-size: 13px; }
+  .steps span { padding: 3px 10px; border-radius: 99px; background: var(--chip); color: var(--muted); }
+  .steps span.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .steps span.done { color: var(--ok); }
+  .steps i { color: var(--muted); font-style: normal; }
+  .erow { display: grid; grid-template-columns: 22px minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 6px; align-items: center; margin-top: 4px; }
+  .erow:not(:has([data-scene])) { grid-template-columns: 22px minmax(0, 1fr) auto; }
+  .erow input { padding: 5px 8px; font-size: 13.5px; }
+  @media (max-width: 700px) { .erow { grid-template-columns: 22px minmax(0, 1fr) auto; } .erow [data-scene] { grid-column: 2; } }
+  .thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  .thumbs figure { margin: 0; position: relative; }
+  .thumbs img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
+  .thumbs figcaption { position: absolute; left: 4px; top: 4px; background: var(--accent); color: var(--accent-ink); border-radius: 99px; font-size: 11px; padding: 0 6px; }
+  .thumbs button { position: absolute; right: 2px; top: 2px; border: 0; background: #000a; color: #fff; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; line-height: 1; }
+  .vids { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 8px; }
+  .vids video { width: 100%; max-height: 420px; background: #000; border-radius: 8px; }
 </style>
 </head>
 <body>
@@ -97,6 +113,7 @@
   <h1>Video <span>Studio</span></h1>
   <nav class="tabs">
     <button data-tab="script">📝 Kịch bản</button>
+    <button data-tab="auto">⚡ Video tự động</button>
     <button data-tab="edit" class="on">🎬 Dựng video</button>
     <button data-tab="voice">🎙️ Tạo giọng đọc</button>
   </nav>
@@ -105,6 +122,80 @@
 </header>
 
 <main>
+<!-- ============ VIDEO TỰ ĐỘNG ============ -->
+<section id="tab-auto" class="hidden">
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2><span class="n">1</span> Ảnh sản phẩm <span class="muted" style="font-weight:400">(không bắt buộc, tối đa 10 ảnh)</span></h2>
+        <div class="drop" id="aDrop">Kéo thả ảnh vào đây, hoặc <label style="color:var(--accent);cursor:pointer">chọn ảnh<input type="file" id="aFiles" accept="image/*" multiple hidden></label></div>
+        <div class="thumbs" id="aThumbs"></div>
+        <div class="muted">Không có ảnh thì video dùng nền màu chuyển động.</div>
+      </div>
+      <div class="card">
+        <h2>🧍 Người mẫu <span class="muted" style="font-weight:400">(không bắt buộc)</span></h2>
+        <div class="muted">Ảnh một người, chụp rõ, thấy mặt nhìn thẳng (toàn thân hoặc nửa người). Ứng dụng tự tách nền và cho người mẫu đứng giới thiệu bên cạnh sản phẩm.</div>
+        <div class="row" style="margin-top:8px; align-items:flex-start">
+          <label class="btn">📁 Chọn ảnh người mẫu<input type="file" id="aModel" accept="image/*" hidden></label>
+          <figure class="thumbs" id="aModelThumb" style="margin:0"></figure>
+        </div>
+        <label class="f">Tên người mẫu (không bắt buộc, để người mẫu tự giới thiệu)</label>
+        <input type="text" id="aModelName" maxlength="40" placeholder="Ví dụ: Lan">
+        <label class="fx" style="margin-top:6px"><input type="checkbox" id="aTalk" checked>
+          <span><b>Người mẫu nhép miệng theo giọng đọc</b><span id="aTalkNote">Mặt người mẫu tự nói theo lời thoại (SadTalker, chạy trên máy). Chậm: mỗi video 30 giây lâu thêm khoảng 5–6 phút.</span></span></label>
+        <label class="fx"><input type="checkbox" id="aConsent">
+          <span>Đây là ảnh của tôi, hoặc người trong ảnh đã cho phép dùng hình ảnh của họ để làm video quảng cáo.</span></label>
+      </div>
+      <div class="card">
+        <h2><span class="n">2</span> Kịch bản và gợi ý nội dung</h2>
+        <label class="f">Kịch bản</label>
+        <select id="aScript"></select>
+        <div class="muted" id="aScriptNote" style="margin-top:4px"></div>
+        <textarea id="aBrief" style="min-height:120px" placeholder="Ví dụ: Giới thiệu màn hình quảng cáo treo tường cho ngân hàng, bệnh viện; lắp đặt trọn gói, đổi nội dung từ xa; đã lắp cho Bệnh viện Đồng Nai 2. Hotline 0909 123 456."></textarea>
+        <div class="row" style="margin-top:8px">
+          <label class="muted">Thời lượng <select id="aDur" style="width:auto"><option value="15">15 giây</option><option value="30" selected>30 giây</option><option value="45">45 giây</option><option value="60">1 phút</option></select></label>
+          <label class="muted">Giọng điệu <select id="aStyle" style="width:auto">
+            <option value="ban-hang">Bán hàng</option><option value="vui">Trẻ trung, vui</option>
+            <option value="chuyen-nghiep">Chuyên nghiệp</option><option value="ke-chuyen">Kể chuyện</option></select></label>
+          <label class="muted">Số video <select id="aN" style="width:auto"><option>2</option><option selected>3</option><option>4</option></select></label>
+        </div>
+        <label class="f">Tên thương hiệu / cửa hàng (hiện ở thanh tên; để trống thì không hiện)</label>
+        <input type="text" id="aBrand" maxlength="60" placeholder="Ví dụ: Màn hình quảng cáo ABC">
+        <label class="f">Người xem (không bắt buộc)</label>
+        <input type="text" id="aAud" placeholder="Ví dụ: chủ doanh nghiệp, quản lý bệnh viện">
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2><span class="n">3</span> Giọng, khung hình, nhạc</h2>
+        <label class="f">Giọng đọc</label>
+        <select id="aVoice"></select>
+        <label class="f">Kiểm tra đọc sai</label>
+        <select id="aTakes"><option value="3">Đọc 3 lần, chọn bản đúng nhất (chậm hơn)</option><option value="1" selected>Đọc 1 lần (nhanh)</option></select>
+        <label class="f">Khung hình</label>
+        <select id="aAspect"><option value="9:16">9:16 dọc (TikTok, Reels, Shorts)</option><option value="1:1">1:1 vuông</option><option value="4:5">4:5 (Facebook, Instagram)</option><option value="16:9">16:9 ngang (YouTube)</option></select>
+        <label class="f">Nhạc nền (không bắt buộc, tự nhỏ lại khi có giọng)</label>
+        <input type="file" id="aMusic" accept="audio/*">
+        <label class="f">Hình cho từng cảnh</label>
+        <select id="aClips">
+          <option value="slides">Ảnh chuyển động (tự động hoàn toàn)</option>
+          <option value="muse">Clip AI từ Muse: app viết sẵn yêu cầu, bạn tạo clip trên muse.ai</option>
+        </select>
+        <label class="f">Chất lượng</label>
+        <select id="aQuality"><option value="final">Hoàn chỉnh (1080p)</option><option value="preview">Xem thử nhanh (nửa độ phân giải)</option></select>
+        <div class="muted" style="margin-top:10px" id="aEngine"></div>
+        <div class="row" style="margin-top:12px"><button class="btn primary" id="btnAuto">✍️ Bước 1: Viết kịch bản</button></div>
+        <div class="muted" style="margin-top:6px">Ba bước: <b>1.</b> AI xem ảnh và viết mỗi video một kịch bản theo một hướng khác nhau (khoảng 1 phút mỗi bản), bạn đọc và sửa; <b>2.</b> bấm Duyệt: đọc giọng, tạo video (ảnh chuyển động tự động, hoặc lấy clip từ Muse); <b>3.</b> dựng hoàn thiện với người mẫu, phụ đề, nhạc.</div>
+        <div class="job hidden" id="jobAuto"></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Các lần tạo</h2>
+    <div id="autoList"><p class="muted">Chưa có.</p></div>
+  </div>
+</section>
+
 <!-- ============ KỊCH BẢN ============ -->
 <section id="tab-script" class="hidden">
   <div class="grid">
@@ -144,6 +235,7 @@
         <div class="row" style="margin-top:10px">
           <button class="btn" id="btnSSave">Lưu chỉnh sửa</button>
           <button class="btn primary" id="btnSVoice">🎙️ Tạo giọng đọc từ kịch bản này</button>
+          <button class="btn primary" id="btnSAuto" title="Mở tab Video tự động với kịch bản này: đọc giọng, lấy ảnh hoặc clip Muse, dựng video">⚡ Tạo video từ kịch bản này</button>
           <button class="btn" id="btnSFx" title="Điền Hook, Lower third, End card vào hiệu ứng của dự án đang mở và bật chúng">🎬 Điền chữ vào dự án đang mở</button>
         </div>
         <div class="muted" id="sSaved" style="margin-top:6px"></div>
@@ -437,6 +529,7 @@ function showTab(t) {
   $("#tab-edit").classList.toggle("hidden", t !== "edit");
   $("#tab-voice").classList.toggle("hidden", t !== "voice");
   $("#tab-script").classList.toggle("hidden", t !== "script");
+  $("#tab-auto").classList.toggle("hidden", t !== "auto");
   store.set("tab", t);
 }
 
@@ -711,6 +804,7 @@ async function loadMine(select) {
                                       : `<option value="">Chưa có giọng nào, hãy clone ở bên dưới</option>`;
   if (prev && MINE.some(v => v.id === prev)) $("#vMine").value = prev;
   showMine();
+  if (INFO && $("#aVoice").options.length) aVoiceOptions();
   $("#mineList").innerHTML = MINE.length ? MINE.map(v => `
     <div class="vt">
       <div class="row" style="justify-content:space-between"><b>${esc(v.name)}</b>
@@ -887,6 +981,7 @@ function renderAi() {
     $("#sGemModel").insertAdjacentHTML("beforeend", `<option>${esc(AI.gemini_model)}</option>`);
   $("#sGemModel").value = AI.gemini_model || "";
   $("#sEngineNote").textContent = "Dùng: " + ENGINE_NAME[AI.engine];
+  if (typeof aEngineNote === "function" && $("#aEngine")) aEngineNote();
 }
 async function loadAi() { AI = await api("GET", "/api/ai-settings"); renderAi(); }
 async function saveAi(extra = {}) {
@@ -928,6 +1023,7 @@ $("#btnScript").onclick = async () => {
 
 async function loadScripts() {
   SCRIPTS = await api("GET", "/api/scripts");
+  aScriptOptions();
   $("#scriptList").innerHTML = SCRIPTS.length ? SCRIPTS.map(s => `
     <div class="vt"><b>${esc(s.title)}</b>
       <div class="muted">${new Date(s.created * 1000).toLocaleString("vi-VN")} · ${s.lines.length} câu · ~${s.est_seconds} giây · ${ENGINE_NAME[s.engine] || s.engine}</div>
@@ -1002,6 +1098,283 @@ $("#btnSFx").onclick = async () => {
   $("#sSaved").textContent = `Đã điền Hook, Lower third, End card vào dự án "${P.name}".`;
 };
 
+// ---------- automatic videos ----------
+let A_FILES = [];
+function aThumbs() {
+  $("#aThumbs").innerHTML = A_FILES.map((f, i) => `<figure><img src="${URL.createObjectURL(f)}" alt=""><figcaption>${i + 1}</figcaption>
+    <button data-arm="${i}" title="Bỏ ảnh này">×</button></figure>`).join("");
+  $$("[data-arm]").forEach(b => b.onclick = () => { A_FILES.splice(+b.dataset.arm, 1); aThumbs(); });
+}
+function aAdd(list) {
+  const imgs = [...list].filter(f => f.type.startsWith("image/"));
+  A_FILES = [...A_FILES, ...imgs].slice(0, 10); aThumbs();
+}
+$("#aFiles").onchange = e => { aAdd(e.target.files); e.target.value = ""; };
+const aDrop = $("#aDrop");
+aDrop.ondragover = e => { e.preventDefault(); aDrop.classList.add("over"); };
+aDrop.ondragleave = () => aDrop.classList.remove("over");
+aDrop.ondrop = e => { e.preventDefault(); aDrop.classList.remove("over"); aAdd(e.dataTransfer.files); };
+function aVoiceOptions() {
+  const pre = INFO.voices.map(v => `<option value="p:${esc(v.name)}">${esc(v.name)} — ${v.gender} ${v.region}${v.name === "Hải Đăng" ? " (mặc định)" : ""}</option>`).join("");
+  const mine = MINE.map(v => `<option value="m:${v.id}">${esc(v.name)}</option>`).join("");
+  const prev = $("#aVoice").value;
+  $("#aVoice").innerHTML = `<optgroup label="Giọng có sẵn">${pre}</optgroup>` + (mine ? `<optgroup label="Giọng của tôi">${mine}</optgroup>` : "");
+  $("#aVoice").value = prev || "p:Hải Đăng";
+}
+$("#aModel").onchange = e => {
+  const f = e.target.files[0];
+  $("#aModelThumb").innerHTML = f ? `<img src="${URL.createObjectURL(f)}" alt=""><button id="aModelRm" title="Bỏ người mẫu">×</button>` : "";
+  if (f) $("#aModelRm").onclick = () => { $("#aModel").value = ""; $("#aModelThumb").innerHTML = ""; };
+};
+$("#btnAuto").onclick = async () => {
+  const brief = $("#aBrief").value.trim();
+  if (brief.length < 10 && !$("#aScript").value) { alert("Hãy viết gợi ý nội dung rõ hơn, hoặc chọn một kịch bản có sẵn."); return; }
+  const model = $("#aModel").files[0];
+  if (model && !$("#aConsent").checked) { alert("Hãy tick xác nhận được phép dùng ảnh người mẫu."); return; }
+  const fd = new FormData();
+  A_FILES.forEach(f => fd.append("images", f));
+  if (model) { fd.append("model", model); fd.append("model_consent", "true"); fd.append("model_name", $("#aModelName").value.trim()); fd.append("model_talk", $("#aTalk").checked && INFO.talker ? "true" : "false"); }
+  if ($("#aMusic").files[0]) fd.append("music", $("#aMusic").files[0]);
+  const v = $("#aVoice").value;
+  if ($("#aScript").value) fd.append("script_id", $("#aScript").value);
+  Object.entries({ brief, brand: $("#aBrand").value.trim(), duration: $("#aDur").value, style: $("#aStyle").value, audience: $("#aAud").value, variants: $("#aN").value,
+    voice: v.startsWith("p:") ? v.slice(2) : "Hải Đăng", myvoice: v.startsWith("m:") ? v.slice(2) : "", takes: $("#aTakes").value,
+    aspect: $("#aAspect").value, quality: $("#aQuality").value, clips: $("#aClips").value }).forEach(([k, x]) => fd.append(k, x));
+  const btn = $("#btnAuto"); btn.disabled = true;
+  try {
+    const r = await api("POST", "/api/auto", fd);
+    runJob(r.job, () => { btn.disabled = false; loadScripts(); });
+  } catch (e) { btn.disabled = false; alert(e.message); }
+};
+let AUTO_SIG = "";
+const STEP = st => ({ "đang làm": 1, "chờ duyệt kịch bản": 1, "đang tạo video": 2, "chờ clip": 2, "xong": 3 }[st] || 1);
+function stepper(r) {
+  const cur = STEP(r.status);
+  return `<div class="steps">${["Hoàn thiện kịch bản", "Tạo video", "Dựng hoàn thiện"].map((t, i) =>
+    `<span class="${i + 1 < cur ? "done" : i + 1 === cur ? "on" : ""}">${i + 1}. ${t}</span>`).join("<i>→</i>")}</div>`;
+}
+function editorBlock(r, v, k) {
+  const sc = v.script, muse = r.request.clips === "muse", busy = r.busy || v.status === "đang viết lại";
+  return `<div class="ed vt" data-ed="${r.id}|${k}" data-muse="${muse ? 1 : ""}">
+    <div class="row" style="justify-content:space-between">
+      <label class="row"><input type="checkbox" data-inc ${v.include !== false ? "checked" : ""}> <b>Kịch bản ${k + 1}</b></label>
+      <span class="muted">${esc(v.status)}${v.error ? ` · <span class="err">${esc(v.error)}</span>` : ""}</span></div>
+    <div class="row" style="margin-top:6px;align-items:flex-start">
+      <div style="flex:2;min-width:180px"><label class="f">Tên</label><input type="text" data-f="title" value="${esc(sc.title)}"></div>
+      <div style="flex:2;min-width:180px"><label class="f">Hook (chữ to 3 giây đầu)</label><input type="text" data-f="hook" value="${esc(sc.hook)}"></div>
+      <div style="flex:2;min-width:180px"><label class="f">End card (lời kết)</label><input type="text" data-f="end_card" value="${esc(sc.end_card)}"></div>
+    </div>
+    <label class="f">Lời thoại từng câu${muse ? " và cảnh tương ứng gửi Muse" : ""} (số, giá, ngày cứ viết bằng chữ số, máy tự đọc đúng)</label>
+    <div data-rows>${sc.rows.map((row, i) => rowHtml(row, i, muse)).join("")}</div>
+    <div class="row" style="margin-top:6px">
+      <button class="btn small" data-addrow>+ Thêm câu</button>
+      <button class="btn small" data-save ${busy ? "disabled" : ""}>Lưu</button>
+      <button class="btn small" data-rewrite ${busy ? "disabled" : ""}>✍️ AI viết lại bản này</button>
+      <span class="muted" data-note></span>
+    </div></div>`;
+}
+function rowHtml(row, i, muse) {
+  return `<div class="erow"><span class="muted">${i + 1}</span>
+    <input type="text" data-text value="${esc(row.text)}" placeholder="Câu thoại">
+    ${muse ? `<input type="text" data-scene value="${esc(row.scene || "")}" placeholder="Cảnh cho Muse: ai/cái gì, đang làm gì, ở đâu">` : ""}
+    <button class="btn small" data-rmrow title="Bỏ câu này">×</button></div>`;
+}
+function editorPayload(ed) {
+  return { title: $("[data-f=title]", ed).value, hook: $("[data-f=hook]", ed).value, end_card: $("[data-f=end_card]", ed).value,
+           rows: $$(".erow", ed).map(rw => ({ text: $("[data-text]", rw).value, scene: $("[data-scene]", rw)?.value || "" })) };
+}
+async function saveEditor(ed) {
+  const { rid, k } = parseKey(ed.dataset.ed);
+  await api("PUT", `/api/auto/${rid}/variant`, { k, ...editorPayload(ed) });
+  ed.dataset.dirty = "";
+}
+function videoTile(r, v, i) {
+  const canReopen = !r.busy && ["chờ clip", "xong", "lỗi", "lỗi dựng", "đã có giọng"].includes(v.status) && v.script_id;
+  return `<div>
+    ${v.file ? `<video controls preload="metadata" src="/files/${v.file}"></video>` : `<div class="muted" style="padding:20px 0">${esc(v.status || "")}</div>`}
+    <div><b>Video ${i + 1}</b>${v.title ? ": " + esc(v.title) : ""}</div>
+    ${v.hook ? `<div class="muted">Hook: ${esc(v.hook)}</div>` : ""}
+    ${v.error ? `<div class="err">${esc(v.error)}</div>` : ""}
+    <div class="row" style="margin-top:4px">
+      ${v.file ? `<a href="/files/${v.file}" download>Tải MP4</a> <span class="muted">${fmt(v.duration)} · ${v.size_mb} MB</span>` : ""}
+      ${v.script_id ? `<button class="btn small" data-aopen="${v.script_id}">Xem kịch bản</button>` : ""}
+      ${canReopen ? `<button class="btn small" data-reopen="${r.id}|${i}" title="Quay lại bước 1: giọng đọc và clip của video này sẽ làm lại">↩ Sửa lại kịch bản</button>` : ""}
+    </div></div>`;
+}
+async function loadAuto(force) {
+  const runs = await api("GET", "/api/auto");
+  const sig = JSON.stringify(runs);
+  if (sig === AUTO_SIG) return;   // re-rendering would stop a video that is playing
+  if (!force && $$("[data-ed]").some(ed => ed.dataset.dirty)) return;   // don't wipe unsaved script edits
+  const edited = {};   // keep Muse prompts the user is editing across re-renders
+  $$("[data-prompt]").forEach(t => { if (t.value !== t.defaultValue) edited[t.dataset.prompt] = t.value; });
+  AUTO_SIG = sig;
+  $("#autoList").innerHTML = runs.length ? runs.map(r => {
+    const editing = r.variants.map((v, k) => v.script ? editorBlock(r, v, k) : "").join("");
+    const nInc = r.variants.filter(v => v.script && v.include !== false && v.status === "chờ duyệt").length;
+    const made = r.variants.map((v, i) => v.script ? "" : videoTile(r, v, i)).join("");
+    return `<div class="vt run">
+      <div class="row" style="justify-content:space-between">
+        <div><b>${esc(r.request.brief.slice(0, 90))}${r.request.brief.length > 90 ? "…" : ""}</b>
+          <div class="muted">${new Date(r.created * 1000).toLocaleString("vi-VN")} · ${r.images.length} ảnh${r.model ? " · có người mẫu" : ""} · ${r.request.duration} giây · ${r.request.clips === "muse" ? "clip Muse" : "ảnh chuyển động"}${r.seconds ? ` · đã chạy ${fmt(r.seconds)}` : ""}</div></div>
+        <button class="btn small" data-adel="${r.id}">Xoá</button>
+      </div>
+      ${stepper(r)}
+      ${r.image_notes ? `<details style="margin-top:4px"><summary class="muted">AI thấy gì trong ảnh</summary><pre class="muted" style="white-space:pre-wrap;font:inherit">${esc(r.image_notes)}</pre></details>` : ""}
+      ${editing ? `<div class="muted" style="margin-top:6px">Bước 1: đọc và sửa từng kịch bản (bỏ tick bản không dùng), bấm <b>Lưu</b>, rồi <b>Duyệt</b>. Chưa duyệt thì chưa đọc giọng, chưa tạo video.</div>${editing}
+        <div class="row" style="margin-top:8px"><button class="btn primary" data-approve="${r.id}" ${r.busy || !nInc ? "disabled" : ""}>✅ Duyệt ${nInc} kịch bản & tạo video</button>
+          <span class="muted">${r.request.clips === "muse" ? "Sau khi duyệt: đọc giọng, rồi hiện danh sách cảnh để lấy clip từ Muse." : "Sau khi duyệt: đọc giọng và tự dựng video."}</span></div>` : ""}
+      ${made.trim() ? `<div class="vids">${made}</div>` : ""}
+      ${r.variants.map((v, k) => v.scenes && !v.script ? sceneBlock(r, v, k) : "").join("")}
+    </div>`;
+  }).join("") : `<p class="muted">Chưa có.</p>`;
+  $$("[data-adel]").forEach(b => b.onclick = async () => { if (confirm("Xoá lần tạo này và các video của nó?")) { await api("DELETE", `/api/auto/${b.dataset.adel}`); loadAuto(true); } });
+  Object.entries(edited).forEach(([key, val]) => { const t = $(`[data-prompt="${key}"]`); if (t) t.value = val; });
+  bindScenes(); bindEditors();
+  $$("[data-aopen]").forEach(b => b.onclick = async () => { await loadScripts(); showTab("script"); openScript(b.dataset.aopen); });
+}
+function runJob(job, after) {
+  AUTO_SIG = ""; loadAuto(true);
+  $("#jobAuto").scrollIntoView({ behavior: "smooth", block: "center" });
+  const tick = setInterval(() => loadAuto(), 15000);
+  watchJob(job, $("#jobAuto"), async () => { clearInterval(tick); AUTO_SIG = ""; await loadAuto(true); after && after(); });
+}
+function bindEditors() {
+  $$("[data-ed]").forEach(ed => {
+    const { rid, k } = parseKey(ed.dataset.ed);
+    const muse = !!ed.dataset.muse;
+    const renumber = () => $$(".erow", ed).forEach((rw, i) => { $("span", rw).textContent = i + 1; });
+    const bindRows = () => $$("[data-rmrow]", ed).forEach(b => b.onclick = () => { b.closest(".erow").remove(); renumber(); ed.dataset.dirty = "1"; });
+    ed.oninput = () => { ed.dataset.dirty = "1"; $("[data-note]", ed).textContent = "Chưa lưu"; };
+    bindRows();
+    $("[data-addrow]", ed).onclick = () => {
+      $("[data-rows]", ed).insertAdjacentHTML("beforeend", rowHtml({ text: "", scene: "" }, $$(".erow", ed).length, muse));
+      bindRows(); ed.dataset.dirty = "1";
+    };
+    $("[data-inc]", ed).onchange = async e => {
+      await api("PUT", `/api/auto/${rid}/variant`, { k, include: e.target.checked });
+      AUTO_SIG = ""; loadAuto(true);
+    };
+    $("[data-save]", ed).onclick = async () => {
+      try { await saveEditor(ed); $("[data-note]", ed).textContent = "Đã lưu"; AUTO_SIG = ""; loadAuto(true); } catch (e) { alert(e.message); }
+    };
+    $("[data-rewrite]", ed).onclick = async () => {
+      if (ed.dataset.dirty && !confirm("Bản này có chỗ sửa chưa lưu, viết lại sẽ mất. Tiếp tục?")) return;
+      ed.dataset.dirty = "";
+      try { const { job } = await api("POST", `/api/auto/${rid}/rewrite`, { k }); runJob(job); } catch (e) { alert(e.message); }
+    };
+  });
+  $$("[data-approve]").forEach(b => b.onclick = async () => {
+    const rid = b.dataset.approve;
+    try {
+      for (const ed of $$(`[data-ed^="${rid}|"]`)) if (ed.dataset.dirty) await saveEditor(ed);   // approve what is on screen
+      const { job } = await api("POST", `/api/auto/${rid}/approve`);
+      runJob(job, () => Promise.all([loadScripts(), loadVoices()]));
+    } catch (e) { alert(e.message); }
+  });
+  $$("[data-reopen]").forEach(b => b.onclick = async () => {
+    if (!confirm("Quay lại sửa kịch bản? Giọng đọc và clip đã lấy cho video này sẽ phải làm lại.")) return;
+    const { rid, k } = parseKey(b.dataset.reopen);
+    try { await api("POST", `/api/auto/${rid}/reopen`, { k }); AUTO_SIG = ""; loadAuto(true); } catch (e) { alert(e.message); }
+  });
+}
+// ----- "Clip từ Muse": one request per scene; the clip the user downloads is picked up from Downloads
+const MUSE_URL = "https://muse.ai/";
+let WAIT = null;   // {rid, k, line, since, until}
+function sceneBlock(r, v, k) {
+  const n = Object.keys(v.clips || {}).length;
+  const busy = v.status === "đang dựng";
+  return `<details class="vt" ${v.file && !WAIT ? "" : "open"}>
+    <summary><b>Video ${k + 1}: các cảnh cho Muse</b> <span class="muted">· đã có clip ${n}/${v.scenes.length} cảnh${v.status ? " · " + esc(v.status) : ""}</span></summary>
+    <p class="muted" style="margin:6px 0">Với mỗi cảnh: bấm <b>Chép & mở Muse</b>, dán vào ô chat Muse (Ctrl+V, Enter), đợi khoảng 30 giây, bấm "…" ở video → <b>Download</b>. Ứng dụng tự nhận file vừa tải về. Cảnh chưa có clip sẽ dùng ảnh chuyển động.</p>
+    ${v.scenes.map(sc => {
+      const clip = (v.clips || {})[sc.line];
+      const waiting = WAIT && WAIT.rid === r.id && WAIT.k === k && WAIT.line === sc.line;
+      return `<div class="scene" style="border-top:1px solid var(--line);padding:8px 0">
+        <div class="row" style="justify-content:space-between"><span><span class="badge">Cảnh ${sc.line}</span> <span class="muted">${sc.seconds} giây</span> ${esc(sc.sub)}</span>
+          <span class="${clip ? "badge ok" : "muted"}">${clip ? "✓ đã có clip" : waiting ? "⏳ đang chờ file tải về…" : "chưa có clip"}</span></div>
+        <textarea data-prompt="${r.id}|${k}|${sc.line}" style="min-height:0;height:62px;margin-top:4px;font-size:13px" title="Sửa được trước khi chép">${esc(sc.prompt)}</textarea>
+        ${sc.image ? `<div class="muted">Gợi ý: có thể đính kèm ảnh ${sc.image} (nút + trong Muse) để clip giống sản phẩm thật.</div>` : ""}
+        <div class="row" style="margin-top:4px">
+          <button class="btn small primary" data-muse="${r.id}|${k}|${sc.line}">Chép & mở Muse</button>
+          <label class="btn small">Chọn file<input type="file" accept="video/*" hidden data-clipfile="${r.id}|${k}|${sc.line}"></label>
+          ${clip ? `<a href="/files/${clip}" target="_blank">Xem clip</a><button class="btn small" data-cliprm="${r.id}|${k}|${sc.line}">Bỏ</button>` : ""}
+        </div></div>`;
+    }).join("")}
+    <div class="row" style="margin-top:8px"><button class="btn primary" data-arender="${r.id}|${k}" ${busy ? "disabled" : ""}>🎬 ${v.file ? "Dựng lại" : "Dựng"} video ${k + 1}</button>
+      <span class="muted">${n < v.scenes.length ? `${v.scenes.length - n} cảnh chưa có clip sẽ dùng ảnh.` : "Đủ clip cho mọi cảnh."}</span></div>
+  </details>`;
+}
+const parseKey = s => { const [rid, k, line] = s.split("|"); return { rid, k: +k, line: line === undefined ? undefined : +line }; };
+function bindScenes() {
+  $$("[data-muse]").forEach(b => b.onclick = async () => {
+    const { rid, k, line } = parseKey(b.dataset.muse);
+    // copy synchronously, inside the click: after an await the browser may block the new window
+    const t = document.createElement("textarea");
+    t.value = $(`[data-prompt="${b.dataset.muse}"]`).value;   // what is in the box, edits included
+    document.body.append(t); t.select(); document.execCommand("copy"); t.remove();
+    window.open(MUSE_URL, "muse");
+    WAIT = { rid, k, line, since: Date.now() / 1000, until: Date.now() + 10 * 60 * 1000 };
+    AUTO_SIG = ""; loadAuto(); pollGrab();
+  });
+  $$("[data-clipfile]").forEach(inp => inp.onchange = async () => {
+    const { rid, k, line } = parseKey(inp.dataset.clipfile);
+    const fd = new FormData(); fd.append("k", k); fd.append("line", line); fd.append("file", inp.files[0]);
+    try { await api("POST", `/api/auto/${rid}/clip`, fd); } catch (e) { alert(e.message); }
+    AUTO_SIG = ""; loadAuto();
+  });
+  $$("[data-cliprm]").forEach(b => b.onclick = async () => {
+    const { rid, k, line } = parseKey(b.dataset.cliprm);
+    await api("DELETE", `/api/auto/${rid}/clip?k=${k}&line=${line}`);
+    AUTO_SIG = ""; loadAuto();
+  });
+  $$("[data-arender]").forEach(b => b.onclick = async () => {
+    const { rid, k } = parseKey(b.dataset.arender);
+    try {
+      const { job } = await api("POST", `/api/auto/${rid}/render`, { k });
+      runJob(job);
+    } catch (e) { alert(e.message); }
+  });
+}
+let grabTimer = null;
+async function pollGrab() {
+  clearTimeout(grabTimer);
+  if (!WAIT) return;
+  if (Date.now() > WAIT.until) { WAIT = null; AUTO_SIG = ""; loadAuto(); return; }
+  try {
+    const r = await api("POST", `/api/auto/${WAIT.rid}/grab`, { k: WAIT.k, line: WAIT.line, since: WAIT.since });
+    if (r.found) { WAIT = null; AUTO_SIG = ""; await loadAuto(); return; }
+  } catch (e) { /* keep waiting */ }
+  grabTimer = setTimeout(pollGrab, 3000);
+}
+function aEngineNote() { if (AI) $("#aEngine").textContent = `AI viết kịch bản: ${ENGINE_NAME[AI.engine]} (đổi ở tab Kịch bản).`; }
+
+// ---------- start the automatic video from a script written in the 📝 Kịch bản tab ----------
+function aScriptOptions(select) {
+  const prev = select ?? $("#aScript").value;
+  const own = SCRIPTS.filter(s => !s.auto_run);   // copies made by automatic runs are not listed again
+  $("#aScript").innerHTML = `<option value="">AI viết mới 2–4 kịch bản từ gợi ý bên dưới</option>` +
+    (own.length ? `<optgroup label="Dùng kịch bản đã có (tab Kịch bản)">${own.map(s =>
+      `<option value="${s.id}">${esc(s.title)} · ${s.lines.length} câu · ~${s.est_seconds} giây</option>`).join("")}</optgroup>` : "");
+  $("#aScript").value = own.some(s => s.id === prev) ? prev : "";
+  aScriptChanged();
+}
+function aScriptChanged() {
+  const sid = $("#aScript").value, s = SCRIPTS.find(x => x.id === sid);
+  $("#aN").closest("label").classList.toggle("hidden", !!sid);
+  $("#aDur").closest("label").classList.toggle("hidden", !!sid);
+  $("#aScriptNote").textContent = s ? `Dùng nguyên lời thoại và cảnh quay của "${s.title}" (1 video). Gợi ý nội dung bên dưới không bắt buộc, dùng để AI viết cảnh cho Muse nếu thiếu.` : "";
+  $("#btnAuto").textContent = s ? "✍️ Bước 1: Dùng kịch bản đã chọn" : "✍️ Bước 1: Viết kịch bản";
+  if (s && !$("#aBrief").value.trim()) $("#aBrief").value = s.brief || "";
+}
+$("#aScript").onchange = aScriptChanged;
+$("#btnSAuto").onclick = async () => {
+  try { await saveScript(); } catch (e) { alert(e.message); return; }
+  aScriptOptions(CUR.id);
+  $("#aBrief").value = CUR.brief || $("#aBrief").value;
+  showTab("auto"); window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
 // ---------- quit (the server runs without a console window) ----------
 $("#btnQuit").onclick = async () => {
   const { running } = await api("GET", "/api/running");
@@ -1019,7 +1392,12 @@ $("#btnQuit").onclick = async () => {
   INFO = await api("GET", "/api/info");
   $("#workdir").textContent = "Dữ liệu: " + INFO.work;
   voiceOptions(); vLabels();
-  await Promise.all([loadMine(), loadVoices(), loadAi(), loadScripts()]);
+  await Promise.all([loadMine(), loadVoices(), loadAi(), loadScripts(), loadAuto()]);
+  aVoiceOptions(); aEngineNote();
+  if (!INFO.talker) {
+    $("#aTalk").checked = false; $("#aTalk").disabled = true;
+    $("#aTalkNote").textContent = "Chưa cài phần này. Chạy install_talker.ps1 trong thư mục ứng dụng (tải khoảng 4 GB) rồi mở lại ứng dụng.";
+  }
   await loadProjects();
   showTab(store.get("tab") || "edit");
 })();

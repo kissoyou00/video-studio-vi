@@ -564,9 +564,10 @@ def apply_video_fx(job: dict, src: Path, dst: Path, s: dict, w: int, h: int, seg
         pad = int(fs * 0.5)
         b = min(5.5, total)
         # sits above the subtitle zone (~65-70% height) so captions are never covered
+        x = f"w-text_w-{int(w * 0.06) + pad}" if s.get("fx_lower_align") == "right" else str(int(w * 0.06) + pad)
         chain += drawtext_lines(fx_lines(edit, "lower", s["fx_lower"], fs, int(w * 0.8)), font_bold, fs, int(h * 0.54),
                                 f"fontcolor=white:box=1:boxcolor={ACCENT}@0.92:boxborderw={pad}:"
-                                f"enable='between(t,1,{b})':alpha='{fade_alpha(1, b)}'", x=str(int(w * 0.06) + pad))
+                                f"enable='between(t,1,{b})':alpha='{fade_alpha(1, b)}'", x=x)
     if s.get("fx_end_on") and s.get("fx_end", "").strip():
         fs = int(m * 0.075)
         a = max(0.0, final - 2.6)
@@ -818,6 +819,7 @@ def voice_entry(d: Path) -> dict:
 def info() -> dict:
     return {"voices": [{"name": n, "gender": g, "region": r, "style": st} for n, g, r, st in PRESET_VOICES],
             "aspects": list(ASPECTS) + ["original"], "grades": list(GRADES), "defaults": DEFAULT_SETTINGS,
+            "talker": talker_ready(),
             "work": str(WORK)}
 
 
@@ -1252,32 +1254,41 @@ def job_script(job: dict, req: dict) -> dict:
     s = ai_settings()
     engine = req.get("engine") or s["engine"]
     prompt, n = scriptgen.user_prompt(req["brief"], req["duration"], req.get("style", "vui"), req.get("audience", ""))
-    say = lambda m: log(job, m)  # noqa: E731
     t0 = time.time()
+    raw, model = ai_generate(job, engine, s, scriptgen.SYSTEM, prompt)
+    out = tidy_or_fail(raw)
+    doc = save_script(req, engine, model, time.time() - t0, out)
+    log(job, f"Xong: {len(out['lines'])} câu, {len(out['shots'])} cảnh.")
+    return script_entry(doc)
+
+
+def ai_generate(job: dict, engine: str, s: dict, system: str, prompt: str, images: list[str] | None = None,
+                schema: dict | None = None) -> tuple[dict, str]:
+    say = lambda m: log(job, m)  # noqa: E731
     try:
         if engine == "ollama":
-            model = s["ollama_model"] or scriptgen.DEFAULT_OLLAMA_MODEL
             with GPU:   # the local model needs the whole 4 GB card
                 TTS.unload(job)
-                raw = scriptgen.run_ollama(model, scriptgen.SYSTEM, prompt, say)
-        elif engine == "claude":
-            model = s["claude_model"]
-            raw = scriptgen.run_claude(s["claude_key"], model, scriptgen.SYSTEM, prompt, say)
-        elif engine == "gemini":
-            model = s["gemini_model"]
-            raw = scriptgen.run_gemini(s["gemini_key"], model, scriptgen.SYSTEM, prompt, say)
-        else:
-            raise scriptgen.ScriptError("Chưa chọn AI viết kịch bản.")
-        out = scriptgen.tidy(raw)
+                return scriptgen.generate(engine, s, system, prompt, say, images, schema)
+        return scriptgen.generate(engine, s, system, prompt, say, images, schema)
     except scriptgen.ScriptError as e:
         raise RuntimeError(str(e)) from None
+
+
+def tidy_or_fail(raw: dict, n_images: int = 0) -> dict:
+    try:
+        return scriptgen.tidy(raw, n_images)
+    except scriptgen.ScriptError as e:
+        raise RuntimeError(str(e)) from None
+
+
+def save_script(req: dict, engine: str, model: str, seconds: float, out: dict, **extra) -> dict:
     sid = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4]
     doc = {"id": sid, "created": time.time(), "brief": req["brief"], "duration": req["duration"],
            "style": req.get("style", "vui"), "audience": req.get("audience", ""),
-           "engine": engine, "model": model or "", "seconds": round(time.time() - t0, 1), **out}
+           "engine": engine, "model": model or "", "seconds": round(seconds, 1), **out, **extra}
     (SCRIPTS / f"{sid}.json").write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
-    log(job, f"Xong: {len(out['lines'])} câu, {len(out['shots'])} cảnh.")
-    return script_entry(doc)
+    return doc
 
 
 @app.get("/api/ai-settings")
@@ -1365,6 +1376,794 @@ def update_script(sid: str, body: dict = Body(...)) -> dict:
 @app.delete("/api/scripts/{sid}")
 def delete_script(sid: str) -> dict:
     script_path(sid).unlink()
+    return {"ok": True}
+
+
+# -------- automatic videos (⚡ Video tự động tab) ------------------------------
+# Photos + a brief → the AI describes the photos once → 2-4 scripts, each from a different angle →
+# VieNeu voice per script → a slideshow (blurred-fill zoom or pan per line) → the editing effects pass
+# (hook, lower third, end card, progress bar, transitions, captions) → audio mix with optional music.
+
+AUTO = WORK / "auto"
+AUTO.mkdir(parents=True, exist_ok=True)
+IMG_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".jfif"}
+MOTIONS = ["in", "pan_fwd", "out", "pan_back"]
+GRADIENTS = [("0x1f3c88", "0xd94f2b"), ("0x0f766e", "0x1e293b"), ("0x7c2d12", "0x1f2937"), ("0x4c1d95", "0x0e7490")]
+VOICE_LEAD, VOICE_TAIL = 0.4, 1.6   # silence before the first line and after the last (end card)
+
+
+def prep_image(src: Path, dst: Path, max_side: int) -> None:
+    """Upright (EXIF), RGB, at most max_side px, as JPEG."""
+    from PIL import Image, ImageOps
+    with Image.open(src) as im:
+        im = ImageOps.exif_transpose(im).convert("RGB")
+        im.thumbnail((max_side, max_side))
+        im.save(dst, "JPEG", quality=90)
+
+
+def b64(path: Path) -> str:
+    import base64
+    return base64.b64encode(path.read_bytes()).decode()
+
+
+def slide(img: Path | None, dst: Path, d: float, w: int, h: int, motion: str, k: int, preview: bool,
+          model_side: str = "") -> None:
+    """One still → d seconds of video. 'in'/'out': whole photo over a blurred copy of itself, slow zoom.
+    'pan_*': photo fills the frame and the camera travels along its long side. With a presenter on
+    `model_side`, the photo is always shown whole, smaller, on the other side and higher up."""
+    if img is not None and model_side and motion.startswith("pan"):
+        motion = "in" if motion == "pan_fwd" else "out"
+    frames = max(2, round(d * 30))
+    enc = ["-c:v", "libx264", "-preset", "ultrafast" if preview else "veryfast", "-crf", "26" if preview else "20",
+           "-pix_fmt", "yuv420p", "-r", "30", "-an", "-frames:v", str(frames)]
+    if img is None:
+        c0, c1 = GRADIENTS[k % len(GRADIENTS)]
+        ffmpeg("-f", "lavfi", "-i", f"gradients=s={w}x{h}:c0={c0}:c1={c1}:x0=0:y0=0:x1={w}:y1={h}:speed=0.015:rate=30:duration={d + 0.1:.3f}",
+               *enc, dst)
+        return
+    src = ["-loop", "1", "-framerate", "30", "-t", f"{d + 0.1:.3f}", "-i", str(img)]
+    if motion in ("in", "out"):
+        z = f"1+0.10*on/{frames}" if motion == "in" else f"1.10-0.10*on/{frames}"
+        if model_side:   # product on the side opposite the presenter, upper part of the frame
+            fw, fh = (0.62, 0.56) if h > w else (0.5, 0.8)
+            pos = f"{'(W-w)*0.08' if model_side == 'right' else '(W-w)*0.92'}:(H-h)*{0.25 if h > w else 0.4}"
+        else:
+            fw, fh, pos = 0.94, 0.74, "(W-w)/2:(H-h)/2*0.92"
+        fc = (f"[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},gblur=sigma=28,eq=brightness=-0.14[bg];"
+              f"[0:v]scale={int(w * fw)}:{int(h * fh)}:force_original_aspect_ratio=decrease[fg];"
+              f"[bg][fg]overlay={pos},scale={2 * w}:{2 * h},"   # 2x before zoompan: less stair-step jitter
+              f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={w}x{h}:fps=30,setsar=1[v]")
+    else:
+        from PIL import Image
+        with Image.open(img) as im:
+            wide = im.width / im.height > w / h
+        p = f"(t/{d:.3f})" if motion == "pan_fwd" else f"(1-t/{d:.3f})"
+        x, y = (f"(iw-{w})*{p}", f"(ih-{h})/2") if wide else (f"(iw-{w})/2", f"(ih-{h})*{p}")
+        fc = (f"[0:v]scale={int(w * 1.08)}:{int(h * 1.08)}:force_original_aspect_ratio=increase,"
+              f"crop=w={w}:h={h}:x='{x}':y='{y}',setsar=1[v]")
+    ffmpeg(*src, "-filter_complex", fc, "-map", "[v]", *enc, dst)
+
+
+def build_slideshow(job: dict, work: Path, imgs: list[Path], lines: list[dict], shots: list[dict], total: float,
+                    w: int, h: int, k: int, preview: bool, model_side: str = "",
+                    clips: dict[int, Path] | None = None) -> tuple[Path, list[dict]]:
+    """Cut on every voice line; returns the silent-audio video and the timeline for apply_video_fx.
+    A line with an AI clip (clips[line]) uses the clip; the others use a photo slide."""
+    pick = {s["line"]: s.get("image", 0) for s in shots}
+    starts = [0.0] + [VOICE_LEAD + l["start"] for l in lines[1:]]
+    bounds = list(zip(starts, starts[1:] + [total]))
+    segs, files, prev = [], [], None
+    for i, (a, b) in enumerate(bounds, 1):
+        f = work / f"_slide{i:02d}.mp4"
+        clip = (clips or {}).get(i)
+        if clip:
+            log(job, f"  Cảnh {i}/{len(bounds)}: {b - a:.1f} giây, clip AI")
+            clip_segment(clip, f, b - a, w, h, preview)
+            src = clip
+        else:
+            img = None
+            if imgs:
+                no = pick.get(i, 0)
+                img = imgs[no - 1] if 1 <= no <= len(imgs) else imgs[(i - 1) % len(imgs)]
+            log(job, f"  Cảnh {i}/{len(bounds)}: {b - a:.1f} giây" + (f", ảnh {imgs.index(img) + 1}" if img else ""))
+            slide(img, f, b - a, w, h, MOTIONS[(i + k) % len(MOTIONS)], k, preview, model_side)
+            src = img
+        files.append(f)
+        segs.append({"a": round(a, 3), "b": round(b, 3), "source": str(src), "kind": "ảnh",
+                     "cut": "" if i == 1 else ("scene" if src != prev else "jump")})
+        prev = src
+    lst = work / "_slides.txt"
+    lst.write_text("".join(f"file '{p.as_posix()}'\n" for p in files), encoding="utf-8")
+    base = work / "_base.mp4"
+    ffmpeg("-f", "concat", "-safe", "0", "-i", lst, "-f", "lavfi", "-i", f"anullsrc=r={SR}:cl=stereo",
+           "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-t", f"{total:.3f}", base)
+    for f in files + [lst]:
+        f.unlink(missing_ok=True)
+    return base, segs
+
+
+# ---- presenter ("người mẫu"): cut out with rembg; optionally lip-synced with SadTalker (install_talker.ps1)
+
+TALKER = HERE / "talker"
+TALK_CODE, TALK_PY = TALKER / "sadtalker", TALKER / ".venv" / "Scripts" / "python.exe"
+_REMBG: dict = {}
+
+
+def talker_ready() -> bool:
+    return TALK_PY.exists() and (TALK_CODE / "checkpoints" / "SadTalker_V0.0.2_256.safetensors").exists() \
+        and (TALK_CODE / "gfpgan" / "weights" / "detection_Resnet50_Final.pth").exists()
+
+
+def cut_model(src: Path, dst: Path) -> None:
+    """Person photo → RGBA cut-out cropped to the person (rembg u2net_human_seg, CPU, ~2 s)."""
+    from PIL import Image, ImageOps
+    from rembg import new_session, remove
+    if "s" not in _REMBG:
+        _REMBG["s"] = new_session("u2net_human_seg")
+    with Image.open(src) as im:
+        im = ImageOps.exif_transpose(im).convert("RGB")
+        im.thumbnail((1600, 1600))
+        cut = remove(im, session=_REMBG["s"])
+    alpha = cut.getchannel("A").point(lambda v: 255 if v > 128 else 0)   # bbox of the solid part, not haze
+    box = alpha.getbbox()
+    if not box or (box[2] - box[0]) * (box[3] - box[1]) < 0.02 * cut.width * cut.height:
+        raise RuntimeError("Không tìm thấy người trong ảnh người mẫu. Hãy dùng ảnh chụp rõ một người.")
+    cut.crop(box).save(dst)
+
+
+def talking_model(job: dict, cut: Path, voice_wav: Path, total: float, work: Path) -> tuple[Path, Path] | None:
+    """SadTalker 'full' + still: only the face moves, the body stays, so the cut-out's own alpha
+    is the matte for every frame. Returns (talking video on gray, matte) or None on failure."""
+    from PIL import Image
+    src, mask = work / "_talk_src.png", work / "_talk_mask.png"
+    with Image.open(cut) as im:
+        im = im.convert("RGBA")
+        im.thumbnail((900, 900))   # the face is pasted back per frame; bigger only costs time
+        im = im.crop((0, 0, im.width // 2 * 2, im.height // 2 * 2))
+        bg = Image.new("RGBA", im.size, (128, 128, 128, 255))
+        bg.alpha_composite(im)
+        bg.convert("RGB").save(src)
+        im.getchannel("A").save(mask)
+    audio = work / "_talk.wav"
+    ffmpeg("-i", voice_wav, "-af", f"adelay={int(VOICE_LEAD * 1000)}:all=1,apad=whole_dur={total:.3f}",
+           "-ar", "16000", "-ac", "1", audio)
+    out_dir = work / "_talk"
+    out_dir.mkdir(exist_ok=True)
+    log(job, f"  Người mẫu nhép miệng theo giọng đọc (SadTalker, khoảng {max(1, round(total * 12 / 60))} phút)…")
+    try:
+        with GPU:
+            TTS.unload(job)
+            run_cmd(job, [TALK_PY, "inference.py", "--driven_audio", audio, "--source_image", src, "--result_dir", out_dir,
+                          "--still", "--preprocess", "full", "--size", "256", "--checkpoint_dir", "checkpoints"], cwd=TALK_CODE)
+    except Exception as e:
+        log(job, f"  Không làm được người mẫu nhép miệng ({e}); dùng ảnh tĩnh.")
+        return None
+    vids = sorted(out_dir.rglob("*.mp4"), key=lambda p: p.stat().st_mtime)
+    return (vids[-1], mask) if vids else None
+
+
+def overlay_presenter(job: dict, base: Path, dst: Path, w: int, h: int, side: str, cut: Path,
+                      talk: tuple[Path, Path] | None, preview: bool) -> None:
+    """Presenter stands at the bottom on `side`, slides in during the first half second."""
+    from PIL import Image
+    with Image.open(cut) as im:
+        cw, ch = im.size
+    mh = h * (0.6 if h > w else 0.88)
+    mw = mh * cw / ch
+    if mw > w * 0.62:   # wide photo (arms out, half body): limit the width instead
+        mw, mh = w * 0.62, w * 0.62 * ch / cw
+    mw, mh = int(mw) // 2 * 2, int(mh) // 2 * 2
+    x = w - mw - int(w * 0.02) if side == "right" else int(w * 0.02)
+    start = w if side == "right" else -mw
+    xe = f"if(lt(t,0.45),{start}+({x}-({start}))*sin(t/0.45*PI/2),{x})"
+    y = h - mh + int(mh * 0.02)
+    if talk:
+        inputs = ["-i", str(base), "-i", str(talk[0]), "-loop", "1", "-i", str(talk[1])]
+        pre = (f"[1:v]scale={mw}:{mh},format=rgba[tv];[2:v]scale={mw}:{mh},format=gray[mk];[tv][mk]alphamerge[m];")
+    else:
+        inputs = ["-i", str(base), "-loop", "1", "-i", str(cut)]
+        pre = f"[1:v]scale={mw}:{mh},format=rgba[m];"
+    log(job, "  Ghép người mẫu" + (" (đang nói)" if talk else "") + f" bên {'phải' if side == 'right' else 'trái'}")
+    ffmpeg(*inputs, "-filter_complex", pre + f"[0:v][m]overlay=x='{xe}':y={y}:eof_action=repeat:shortest=0[v]",
+           "-map", "[v]", "-map", "0:a", "-c:v", "libx264", "-preset", "ultrafast" if preview else "fast",
+           "-crf", "26" if preview else "18", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "copy",
+           "-t", f"{probe(base)['duration']:.3f}", dst)
+
+
+def run_entry(rdir: Path) -> dict:
+    return json.loads((rdir / "run.json").read_text(encoding="utf-8"))
+
+
+def save_run(rdir: Path, run: dict) -> None:
+    (rdir / "run.json").write_text(json.dumps(run, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def update_run(rdir: Path, fn) -> dict:
+    """Read-modify-write run.json under the project lock: the page assigns clips while the job still
+    writes voices for other variants, and neither may overwrite the other."""
+    with PLOCK:
+        run = run_entry(rdir)
+        fn(run)
+        save_run(rdir, run)
+        return run
+
+
+# ---- "Clip từ Muse": per-scene requests the user pastes into Muse (muse.ai, Meta's agent; no public API).
+# Measured 2026-11-05: "Tạo một video dọc 9:16 dài 5 giây: …" → 720x1280, 5.0 s, ~30 s to make, Download in "…".
+MUSE_URL = "https://muse.ai/"
+CAMERA = ["máy quay tiến chậm vào chủ thể", "máy quay lia ngang chậm từ trái sang phải", "máy quay lùi ra từ từ",
+          "máy quay lướt nhẹ từ dưới lên", "máy quay cố định, chủ thể chuyển động nhẹ nhàng"]
+ASPECT_WORDS = {"9:16": "dọc 9:16", "16:9": "ngang 16:9", "1:1": "vuông 1:1", "4:5": "dọc 4:5"}
+DOWNLOADS = Path(os.environ.get("STUDIO_DOWNLOADS") or HOME / "Downloads")
+CLIP_EXT = {".mp4", ".mov", ".webm", ".m4v"}
+
+
+def muse_prompt(shot: dict, sub: str, aspect: str, i: int) -> str:
+    scene = shot.get("desc") or f"hình ảnh minh hoạ cho câu \"{sub}\""
+    return (f"Tạo một video {ASPECT_WORDS.get(aspect, 'dọc 9:16')} dài 5 giây: {scene.rstrip('.')}, {CAMERA[(i - 1) % len(CAMERA)]}. "
+            "Phong cách quảng cáo, chân thực, ánh sáng đẹp, không có chữ, không có logo.")
+
+
+def clip_segment(clip: Path, dst: Path, d: float, w: int, h: int, preview: bool) -> None:
+    """AI clip → exactly d seconds at w x h: cover-crop; a clip shorter than the line is slowed down up
+    to 1.5x, then its last frame is held."""
+    frames = max(2, round(d * 30))
+    cd = probe(clip)["duration"] or d
+    factor = min(max(d / cd, 1.0), 1.5)
+    vf = (f"setpts={factor:.4f}*PTS,scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,"
+          f"fps=30,tpad=stop_mode=clone:stop_duration={d + 0.5:.2f}")
+    ffmpeg("-i", clip, "-vf", vf, "-an", "-frames:v", str(frames), "-c:v", "libx264",
+           "-preset", "ultrafast" if preview else "veryfast", "-crf", "26" if preview else "20", "-pix_fmt", "yuv420p", "-r", "30", dst)
+
+
+def write_scene_texts(job: dict, engine: str, s: dict, brief: str, images_txt: str, subs: list[str]) -> dict[str, str]:
+    """One visible 5-second scene per voice line, for Muse. The small local model, asked inside the
+    script call, covered only 2 of 7 lines, so this is its own call."""
+    log(job, f"Viết yêu cầu tạo clip cho {len(subs)} cảnh…")
+    written: dict[str, str] = {}
+    try:
+        raw, _ = ai_generate(job, engine, s, scriptgen.SCENES_SYSTEM, scriptgen.scenes_prompt(brief, images_txt, subs),
+                             None, scriptgen.SCENES_SCHEMA)
+        for x in raw.get("scenes") or []:
+            try:
+                i = int(x.get("line"))
+            except (TypeError, ValueError):
+                continue
+            text = scriptgen.clean_scene(x.get("scene"))
+            if 1 <= i <= len(subs) and text:
+                written.setdefault(str(i), text)
+    except Exception as e:
+        log(job, f"  Không viết được yêu cầu cảnh ({e}).")
+    missing = len(subs) - len(written)
+    if missing:
+        log(job, f"  {missing} cảnh chưa có mô tả, hãy điền trước khi duyệt.")
+    return written
+
+
+def write_variant(job: dict, run: dict, k: int, engine: str, s: dict) -> dict:
+    """Step 1 for variant k: the script (and, for Muse, one scene request per line)."""
+    req = run["request"]
+    n_img = len(run["images"])
+    images_txt = run.get("images_txt", "")
+    log(job, f"Viết kịch bản {k + 1}/{req['variants']}…")
+    brief = req["brief"] + (f"\nTên thương hiệu / người bán: {req['brand']}" if req.get("brand") else "")
+    if run.get("model"):
+        brief += ("\nVideo có một người mẫu đứng giới thiệu sản phẩm: lời đọc là lời người mẫu nói trực tiếp với "
+                  "người xem, tự nhiên, xưng \"mình\" và gọi người xem là \"bạn\". "
+                  + (f"Người mẫu tên là {req['model_name']}." if req.get("model_name")
+                     else "Không biết tên người mẫu: không để người mẫu tự giới thiệu tên."))
+    prompt, _ = scriptgen.user_prompt(brief, req["duration"], req["style"], req.get("audience", ""),
+                                      scriptgen.ANGLES[k % len(scriptgen.ANGLES)], images_txt, n_img)
+    t1 = time.time()
+    raw, model = ai_generate(job, engine, s, scriptgen.SYSTEM, prompt, None, scriptgen.SCHEMA_IMG if n_img else scriptgen.SCHEMA)
+    out = tidy_or_fail(raw, n_img)
+    doc = save_script(req, engine, model, time.time() - t1, out, auto_run=run["id"])
+    v = {"status": "chờ duyệt", "include": True, "script_id": doc["id"], "title": out["title"], "hook": out["hook"]}
+    if req.get("clips") == "muse":
+        v["scene_text"] = write_scene_texts(job, engine, s, req["brief"], images_txt, [l["sub"] for l in out["lines"]])
+    return v
+
+
+def variant_from_script(job: dict, run: dict, engine: str, s: dict) -> dict:
+    """Step 1 from a script the user already wrote in the 📝 Kịch bản tab. It is copied, so edits made
+    here don't change the original. Muse scenes come from its shot list; the AI fills only the gaps."""
+    req = run["request"]
+    src = json.loads(script_path(run["from_script"]).read_text(encoding="utf-8"))
+    log(job, f"Dùng kịch bản có sẵn: {src['title']} ({len(src['lines'])} câu)")
+    n_img = len(run["images"])
+    shots = {x["line"]: x for x in src.get("shots", [])}
+    out = {k2: src.get(k2, "") for k2 in ("title", "hook", "lower_third", "end_card")}
+    out["lines"] = src["lines"]
+    out["shots"] = [{"line": i, "desc": shots.get(i, {}).get("desc", ""), "prompt_en": shots.get(i, {}).get("prompt_en", ""),
+                     **({"image": shots.get(i, {}).get("image") or ((i - 1) % n_img) + 1} if n_img else {})}
+                    for i in range(1, len(src["lines"]) + 1)]
+    doc = save_script(req, src.get("engine", ""), src.get("model", ""), 0, out, auto_run=run["id"], copied_from=src["id"])
+    v = {"status": "chờ duyệt", "include": True, "script_id": doc["id"], "title": out["title"], "hook": out["hook"]}
+    if req.get("clips") == "muse":
+        texts = {str(i): scriptgen.clean_scene(sh["desc"]) or sh["prompt_en"] for i, sh in
+                 ((x["line"], x) for x in out["shots"]) if scriptgen.clean_scene(sh["desc"]) or sh["prompt_en"]}
+        gaps = [i for i in range(1, len(out["lines"]) + 1) if str(i) not in texts]
+        if gaps:
+            more = write_scene_texts(job, engine, s, req["brief"], run.get("images_txt", ""), [l["sub"] for l in out["lines"]])
+            texts.update({str(i): more[str(i)] for i in gaps if str(i) in more})
+        v["scene_text"] = texts
+    return v
+
+
+def produce_variant(job: dict, rdir: Path, k: int) -> None:
+    """Step 2 for an approved variant: voice; then Muse scene list (wait for clips) or the slideshow render."""
+    run = run_entry(rdir)
+    req, v = run["request"], run["variants"][k]
+    doc = json.loads(script_path(v["script_id"]).read_text(encoding="utf-8"))
+    log(job, f"Giọng đọc cho video {k + 1}…")
+    voice = job_voice(job, {"text": scriptgen.voice_text(doc["lines"]), "title": f"Video tự động {k + 1} - {doc['title']}",
+                            "voice": req.get("voice") or "Hải Đăng", "myvoice": req.get("myvoice") or "",
+                            "takes": req.get("takes", 3), "speed": req.get("speed", 1.0), "gap": 0.35})
+    upd = {"voice_id": voice["id"], "total": round(VOICE_LEAD + voice["total"] + VOICE_TAIL, 2), "title": doc["title"],
+           "hook": doc["hook"], "status": "đã có giọng"}
+    if req.get("clips") == "muse":
+        shots = {x["line"]: x for x in doc["shots"]}
+        texts = v.get("scene_text") or {}
+        starts = [0.0] + [VOICE_LEAD + l["start"] for l in voice["lines"][1:]]
+        ends = starts[1:] + [upd["total"]]
+        upd["scenes"] = [{"line": i, "sub": l["sub"], "seconds": round(ends[i - 1] - starts[i - 1], 1),
+                          "image": shots.get(i, {}).get("image", 0),
+                          "prompt": muse_prompt({"desc": texts.get(str(i), "")}, l["sub"], req["aspect"], i)}
+                         for i, l in enumerate(voice["lines"], 1)]
+        upd["clips"] = {}
+        upd["status"] = "chờ clip"
+    update_run(rdir, lambda r: r["variants"][k].update(upd))
+    if req.get("clips") != "muse":
+        render_variant(job, rdir, k)
+
+
+def render_variant(job: dict, rdir: Path, k: int) -> dict:
+    run = run_entry(rdir)
+    req, v = run["request"], run["variants"][k]
+    imgs = [WORK / p for p in run["images"]]
+    cut = rdir / "model-cut.png" if run.get("model") else None
+    doc = json.loads(script_path(v["script_id"]).read_text(encoding="utf-8"))
+    voice = voice_entry(VOICES / safe_id(v["voice_id"]))
+    total = VOICE_LEAD + voice["total"] + VOICE_TAIL
+    w, h = ASPECTS.get(req["aspect"], ASPECTS["9:16"])
+    preview = req.get("quality") == "preview"
+    if preview:
+        w, h = w // 4 * 2, h // 4 * 2
+    clips = {int(i): WORK / p for i, p in (v.get("clips") or {}).items() if (WORK / p).exists()}
+    log(job, f"Dựng video {k + 1} ({total:.1f} giây" + (f", {len(clips)}/{len(voice['lines'])} cảnh dùng clip AI" if req.get("clips") == "muse" else "") + ")…")
+    work = rdir / f"v{k + 1}"
+    work.mkdir(exist_ok=True)
+    side = ("right", "left")[k % 2] if cut else ""
+    base, segs = build_slideshow(job, work, imgs, voice["lines"], doc["shots"], total, w, h, k, preview, side, clips)
+    if cut:
+        talk = None
+        if req.get("model_talk") and talker_ready():
+            talk = talking_model(job, cut, VOICES / voice["id"] / "voice_full.wav", total, work)
+        pres = work / "_pres.mp4"
+        overlay_presenter(job, base, pres, w, h, side, cut, talk, preview)
+        base = pres
+    st = {**DEFAULT_SETTINGS, "orig_volume": 0.0, "voice_id": voice["id"], "voice_offset": VOICE_LEAD, "voice_volume": 1.0,
+          "music": run.get("music", ""), "music_volume": 0.22, "duck": True,
+          "fx_fade": True, "fx_progress": True, "fx_whoosh": bool(imgs or clips),
+          "fx_transition": ["none", "flash", "dip", "none"][k % 4] if (imgs or clips) else "none",
+          "fx_hook_on": bool(doc["hook"]), "fx_hook": doc["hook"],
+          # the AI's lower third is often a guess (it misreads logos); only the name the user typed is shown
+          "fx_lower_on": bool(req.get("brand")), "fx_lower": req.get("brand", ""),
+          "fx_lower_align": "right" if side == "left" else "left",   # never over the presenter
+          "fx_end_on": bool(doc["end_card"]), "fx_end": doc["end_card"]}
+    cues = [c for l in voice["lines"] for c in caption_chunks(l["sub"], l["start"] + VOICE_LEAD, l["end"] + VOICE_LEAD)]
+    subs = work / "subs.srt"
+    subs.write_text("\n".join(f"{i}\n{srt_stamp(a)} --> {srt_stamp(b)}\n{t}\n" for i, (a, b, t) in enumerate(cues, 1)),
+                    encoding="utf-8")
+    fxv = work / "_fx.mp4"
+    final = apply_video_fx(job, base, fxv, st, w, h, segs, total, preview, subs, work)
+    old = WORK / v["file"] if v.get("file") else None
+    out = unique(rdir / f"video-{k + 1}-{slug(doc['title'], 'video')}.mp4")
+    mix_audio(job, fxv, out, st, final, [g["a"] for g in segs if g["cut"] == "scene"], work)
+    shutil.rmtree(work, ignore_errors=True)
+    if old and old.exists() and old != out:
+        old.unlink()   # re-render after adding clips replaces the earlier cut
+    info = {"status": "xong", "file": rel(out), "duration": probe(out)["duration"], "size_mb": round(out.stat().st_size / 1e6, 1),
+            "clips_used": len(clips)}
+    update_run(rdir, lambda r: r["variants"][k].update(info))
+    log(job, f"Xong video {k + 1}: {out.name}")
+    return info
+
+
+def job_autovideo(job: dict, rdir: Path) -> dict:
+    """Step 1 (scripts). Stops at 'chờ duyệt kịch bản': the user edits, then approves (job_auto_produce)."""
+    run = run_entry(rdir)
+    req = run["request"]
+    s = ai_settings()
+    engine = req.get("engine") or s["engine"]
+    t0 = time.time()
+    imgs = [WORK / p for p in run["images"]]
+
+    if run.get("model"):
+        log(job, "Tách nền ảnh người mẫu…")
+        cut_model(WORK / run["model"], rdir / "model-cut.png")
+        if req.get("model_talk") and not talker_ready():
+            log(job, "Chưa cài phần nhép miệng (chạy install_talker.ps1); người mẫu sẽ là ảnh tĩnh.")
+
+    if imgs:
+        log(job, f"AI xem {len(imgs)} ảnh…")
+        ai_dir = rdir / "_ai"
+        ai_dir.mkdir(exist_ok=True)
+        small = []
+        for i, p in enumerate(imgs, 1):
+            q = ai_dir / f"img{i}.jpg"
+            prep_image(p, q, 896)
+            small.append(b64(q))
+        desc, _ = ai_generate(job, engine, s, scriptgen.DESCRIBE_SYSTEM, scriptgen.describe_prompt(len(imgs), req["brief"]),
+                              small, scriptgen.DESCRIBE_SCHEMA)
+        shutil.rmtree(ai_dir, ignore_errors=True)
+        notes, txt = scriptgen.images_text(desc), scriptgen.images_text(desc, with_text=False)
+        run = update_run(rdir, lambda r: r.update(image_notes=notes, images_txt=txt))
+        log(job, "AI thấy:\n" + notes)
+
+    n = 1 if run.get("from_script") else int(req["variants"])
+    run = update_run(rdir, lambda r: r.update(variants=[{"status": "chờ"} for _ in range(n)]))
+    for k in range(n):
+        try:
+            v = variant_from_script(job, run, engine, s) if run.get("from_script") else write_variant(job, run, k, engine, s)
+            update_run(rdir, lambda r: r["variants"][k].update(v))
+        except Exception as e:
+            err = str(e)
+            update_run(rdir, lambda r: r["variants"][k].update(status="lỗi", error=err, include=False))
+            log(job, f"Kịch bản {k + 1} lỗi: {e}")
+    ok = sum(v.get("status") == "chờ duyệt" for v in run_entry(rdir)["variants"])
+    update_run(rdir, lambda r: r.update(status="chờ duyệt kịch bản" if ok else "lỗi", seconds=round(time.time() - t0)))
+    if not ok:
+        raise RuntimeError("Không viết được kịch bản nào. Xem nhật ký bên dưới.")
+    log(job, f"Xong bước 1: {ok} kịch bản. Đọc, sửa rồi bấm Duyệt để tạo video.")
+    return run_entry(rdir)
+
+
+def job_auto_rewrite(job: dict, rdir: Path, k: int) -> dict:
+    s = ai_settings()
+    run = run_entry(rdir)
+    engine = run["request"].get("engine") or s["engine"]
+    update_run(rdir, lambda r: r["variants"][k].update(status="đang viết lại", error=""))
+    try:
+        v = write_variant(job, run, k, engine, s)
+    except Exception as e:
+        err = str(e)
+        update_run(rdir, lambda r: r["variants"][k].update(status="chờ duyệt", error=err))
+        raise
+    update_run(rdir, lambda r: r["variants"][k].update(v))
+    return run_entry(rdir)["variants"][k]
+
+
+def job_auto_produce(job: dict, rdir: Path) -> dict:
+    """Step 2 (+3 for slides): voice for every approved script, then clips/render."""
+    t0 = time.time()
+    run = update_run(rdir, lambda r: r.update(status="đang tạo video"))
+    todo = [k for k, v in enumerate(run["variants"]) if v.get("include") and v.get("status") == "chờ duyệt"]
+    for k in todo:
+        try:
+            produce_variant(job, rdir, k)
+        except Exception as e:
+            err = str(e)
+            update_run(rdir, lambda r: r["variants"][k].update(status="lỗi", error=err))
+            log(job, f"Video {k + 1} lỗi: {e}")
+    vs = run_entry(rdir)["variants"]
+    muse = run["request"].get("clips") == "muse"
+    status = "chờ clip" if muse and any(v.get("status") == "chờ clip" for v in vs) else \
+             ("xong" if any(v.get("status") == "xong" for v in vs) else "lỗi")
+    update_run(rdir, lambda r: r.update(status=status, seconds=(r.get("seconds") or 0) + round(time.time() - t0)))
+    log(job, "Đã có giọng đọc. Lấy clip từ Muse cho từng cảnh, rồi bấm Dựng." if muse else f"Hoàn tất sau {fmt_secs(time.time() - t0)}.")
+    return run_entry(rdir)
+
+
+def fmt_secs(x: float) -> str:
+    x = round(x)
+    return f"{x // 60} phút {x % 60} giây"
+
+
+def job_render_variant(job: dict, rdir: Path, k: int) -> dict:
+    update_run(rdir, lambda r: r["variants"][k].update(status="đang dựng", error=""))
+    try:
+        info = render_variant(job, rdir, k)
+
+        def finish(r):   # step 3 reached once no approved video still waits for clips
+            if not any(v.get("status") in ("chờ clip", "đang dựng", "đã có giọng") for v in r["variants"]):
+                r["status"] = "xong"
+        update_run(rdir, finish)
+        return info
+    except Exception as e:
+        err = str(e)
+        update_run(rdir, lambda r: r["variants"][k].update(status="lỗi dựng", error=err))
+        raise
+
+
+@app.post("/api/auto")
+def create_auto(images: list[UploadFile] = File(default=[]), music: UploadFile | None = File(default=None),
+                model: UploadFile | None = File(default=None), model_consent: bool = Form(False), model_talk: bool = Form(False),
+                model_name: str = Form(""), clips: str = Form("slides"),
+                brief: str = Form(...), duration: int = Form(30), style: str = Form("vui"), audience: str = Form(""),
+                variants: int = Form(3), voice: str = Form("Hải Đăng"), myvoice: str = Form(""), takes: int = Form(3),
+                speed: float = Form(1.0), aspect: str = Form("9:16"), quality: str = Form("final"), engine: str = Form(""),
+                brand: str = Form(""), script_id: str = Form("")) -> dict:
+    """New run. With `script_id` (a script from the 📝 Kịch bản tab) the AI writing is skipped: the run
+    has one video made from that script, still stopping at step 1 for review."""
+    brief = brief.strip()
+    if script_id:
+        src = json.loads(script_path(script_id).read_text(encoding="utf-8"))
+        brief = brief or src.get("brief", "")
+        variants = 1
+    elif len(brief) < 10:
+        raise HTTPException(400, "Hãy viết nội dung video rõ hơn (ít nhất một câu).")
+    if len(images) > 10:
+        raise HTTPException(400, "Tối đa 10 ảnh.")
+    if myvoice:
+        myvoice_dir(myvoice)
+    rid = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4]
+    rdir = AUTO / rid
+    (rdir / "inputs").mkdir(parents=True)
+    saved = []
+    for i, f in enumerate(images, 1):
+        ext = Path(f.filename or "").suffix.lower()
+        if ext not in IMG_EXT:
+            shutil.rmtree(rdir, ignore_errors=True)
+            raise HTTPException(400, f"File {f.filename} không phải ảnh JPG/PNG/WEBP.")
+        raw = rdir / "inputs" / f"raw{i}{ext}"
+        raw.write_bytes(f.file.read())
+        dst = rdir / "inputs" / f"anh-{i}.jpg"
+        try:
+            prep_image(raw, dst, 2400)
+        except Exception:
+            shutil.rmtree(rdir, ignore_errors=True)
+            raise HTTPException(400, f"Không đọc được ảnh {f.filename}.")
+        raw.unlink()
+        saved.append(rel(dst))
+    model_rel = ""
+    if model is not None and model.filename:
+        if not model_consent:
+            shutil.rmtree(rdir, ignore_errors=True)
+            raise HTTPException(400, "Hãy xác nhận bạn được phép dùng ảnh người mẫu này.")
+        ext = Path(model.filename).suffix.lower()
+        if ext not in IMG_EXT:
+            shutil.rmtree(rdir, ignore_errors=True)
+            raise HTTPException(400, "Ảnh người mẫu phải là JPG/PNG/WEBP.")
+        raw = rdir / "inputs" / f"model-raw{ext}"
+        raw.write_bytes(model.file.read())
+        try:
+            prep_image(raw, rdir / "inputs" / "nguoi-mau.jpg", 2000)
+        except Exception:
+            shutil.rmtree(rdir, ignore_errors=True)
+            raise HTTPException(400, "Không đọc được ảnh người mẫu.")
+        raw.unlink()
+        model_rel = rel(rdir / "inputs" / "nguoi-mau.jpg")
+    music_rel = ""
+    if music is not None and music.filename:
+        m = rdir / ("nhac" + (Path(music.filename).suffix.lower() or ".mp3"))
+        m.write_bytes(music.file.read())
+        music_rel = rel(m)
+    req = {"brief": brief[:4000], "duration": min(max(int(duration), 10), 120), "style": style, "audience": audience[:300],
+           "variants": min(max(int(variants), 1), 4), "voice": voice, "myvoice": myvoice, "takes": min(max(int(takes), 1), 5),
+           "speed": min(max(float(speed), 0.8), 1.25), "aspect": aspect if aspect in ASPECTS else "9:16",
+           "quality": "preview" if quality == "preview" else "final", "engine": engine, "brand": brand.strip()[:60],
+           "model_talk": bool(model_talk and model_rel), "model_name": model_name.strip()[:40] if model_rel else "",
+           "clips": "muse" if clips == "muse" else "slides"}
+    save_run(rdir, {"id": rid, "created": time.time(), "status": "đang làm", "request": req, "images": saved,
+                    "music": music_rel, "model": model_rel, "variants": [], "from_script": script_id})
+    return {"id": rid, "job": start_auto_job(rid, "auto", job_autovideo, rdir)}
+
+
+def list_auto_one(d: Path) -> dict:
+    """run.json plus, for scripts still in step 1, the editable text (lines, end card, scene requests)."""
+    run = run_entry(d)
+    run["busy"] = auto_busy(run["id"])
+    for v in run.get("variants", []):
+        if v.get("script_id") and v.get("status") in ("chờ duyệt", "đang viết lại"):
+            try:
+                doc = json.loads(script_path(v["script_id"]).read_text(encoding="utf-8"))
+            except (HTTPException, OSError, ValueError):
+                continue
+            sc = v.get("scene_text") or {}
+            v["script"] = {"title": doc["title"], "hook": doc["hook"], "end_card": doc["end_card"],
+                           "rows": [{"text": l["sub"] if l["say"] == scriptgen.to_speech(l["sub"]) else f"{l['say']} | {l['sub']}",
+                                     "scene": sc.get(str(i), "")} for i, l in enumerate(doc["lines"], 1)]}
+    return run
+
+
+@app.get("/api/auto")
+def list_auto() -> list:
+    out = []
+    for d in sorted(AUTO.iterdir(), reverse=True):
+        if (d / "run.json").exists():
+            try:
+                out.append(list_auto_one(d))
+            except (OSError, ValueError):
+                continue
+    return out
+
+
+def auto_dir(rid: str) -> Path:
+    d = AUTO / safe_id(rid)
+    if not (d / "run.json").exists():
+        raise HTTPException(404, "Không tìm thấy")
+    return d
+
+
+def variant_of(rdir: Path, k: int) -> dict:
+    run = run_entry(rdir)
+    if not 0 <= k < len(run["variants"]) or not run["variants"][k].get("voice_id"):
+        raise HTTPException(400, "Video này chưa có kịch bản và giọng đọc")
+    return run["variants"][k]
+
+
+def store_clip(rdir: Path, k: int, line: int, src: Path | None = None, data: bytes | None = None, ext: str = ".mp4") -> dict:
+    v = variant_of(rdir, k)
+    if not any(sc["line"] == line for sc in v.get("scenes") or []):
+        raise HTTPException(400, "Không có cảnh này")
+    (rdir / "clips").mkdir(exist_ok=True)
+    dst = rdir / "clips" / f"v{k + 1}-canh{line:02d}{ext}"
+    for old in (rdir / "clips").glob(f"v{k + 1}-canh{line:02d}.*"):
+        old.unlink()
+    if src is not None:
+        shutil.copy2(src, dst)
+    else:
+        dst.write_bytes(data or b"")
+    info = probe(dst)
+    if not info["has_video"]:
+        dst.unlink()
+        raise HTTPException(400, "File không phải video")
+    run = update_run(rdir, lambda r: r["variants"][k].setdefault("clips", {}).__setitem__(str(line), rel(dst)))
+    return {"file": rel(dst), "duration": info["duration"], "clips": run["variants"][k]["clips"]}
+
+
+@app.post("/api/auto/{rid}/clip")
+def upload_clip(rid: str, k: int = Form(...), line: int = Form(...), file: UploadFile = File(...)) -> dict:
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in CLIP_EXT:
+        raise HTTPException(400, "Chỉ nhận video MP4/MOV/WEBM")
+    return store_clip(auto_dir(rid), k, line, data=file.file.read(), ext=ext)
+
+
+@app.post("/api/auto/{rid}/grab")
+def grab_clip(rid: str, body: dict = Body(...)) -> dict:
+    """Newest finished video in Downloads saved after `since` (epoch seconds) → this scene's clip.
+    The page calls it every few seconds after 'Chép & mở Muse'."""
+    rdir = auto_dir(rid)
+    k, line, since = int(body["k"]), int(body["line"]), float(body.get("since") or 0)
+    if not DOWNLOADS.exists():
+        return {"found": False, "error": f"Không thấy thư mục {DOWNLOADS}"}
+    used = {json.dumps(x) for x in run_entry(rdir).get("grabbed", [])}
+    cands = []
+    for p in DOWNLOADS.iterdir():
+        if p.suffix.lower() in CLIP_EXT and p.is_file():
+            st = p.stat()
+            key = json.dumps([p.name, round(st.st_mtime, 1)])
+            if st.st_mtime >= since - 2 and st.st_size > 10_000 and key not in used:
+                cands.append((st.st_mtime, p, key))
+    if not cands:
+        return {"found": False}
+    _, p, key = max(cands)
+    size = p.stat().st_size
+    time.sleep(0.6)
+    if p.stat().st_size != size:   # still downloading
+        return {"found": False}
+    out = store_clip(rdir, k, line, src=p, ext=p.suffix.lower())
+    update_run(rdir, lambda r: r.setdefault("grabbed", []).append(json.loads(key)))
+    return {"found": True, "name": p.name, **out}
+
+
+@app.delete("/api/auto/{rid}/clip")
+def remove_clip(rid: str, k: int, line: int) -> dict:
+    rdir = auto_dir(rid)
+    for old in (rdir / "clips").glob(f"v{k + 1}-canh{line:02d}.*"):
+        old.unlink()
+    run = update_run(rdir, lambda r: r["variants"][k].setdefault("clips", {}).pop(str(line), None))
+    return {"clips": run["variants"][k]["clips"]}
+
+
+def auto_busy(rid: str) -> bool:
+    return any(j["status"] == "running" and j["kind"].startswith("auto") and rid in j.get("tag", "") for j in JOBS.values())
+
+
+def start_auto_job(rid: str, kind: str, fn, *args) -> str:
+    if auto_busy(rid):
+        raise HTTPException(400, "Lần tạo này đang chạy một việc khác, đợi xong đã.")
+    jid = start_job(kind, fn, *args)
+    JOBS[jid]["tag"] = rid
+    return jid
+
+
+@app.put("/api/auto/{rid}/variant")
+def edit_auto_variant(rid: str, body: dict = Body(...)) -> dict:
+    """Step 1 edits: include/skip, title, hook, end card, and the rows (voice line + Muse scene)."""
+    rdir = auto_dir(rid)
+    k = int(body["k"])
+    run = run_entry(rdir)
+    if not 0 <= k < len(run["variants"]) or not run["variants"][k].get("script_id"):
+        raise HTTPException(400, "Không có kịch bản này")
+    v = run["variants"][k]
+    if "include" in body:
+        update_run(rdir, lambda r: r["variants"][k].update(include=bool(body["include"])))
+    if any(x in body for x in ("rows", "title", "hook", "end_card")):
+        if v.get("status") != "chờ duyệt":
+            raise HTTPException(400, "Kịch bản đã duyệt. Bấm 'Sửa lại kịch bản' để sửa.")
+        p = script_path(v["script_id"])
+        doc = json.loads(p.read_text(encoding="utf-8"))
+        for key in ("title", "hook", "end_card"):
+            if isinstance(body.get(key), str):
+                doc[key] = body[key].strip()[:80]
+        scene_text = v.get("scene_text") or {}
+        if isinstance(body.get("rows"), list):
+            rows = [r for r in body["rows"] if isinstance(r, dict) and str(r.get("text") or "").strip()]
+            if not rows:
+                raise HTTPException(400, "Kịch bản cần ít nhất một câu")
+            lines, scene_text = [], {}
+            for i, r in enumerate(rows, 1):
+                say, sep, sub = str(r["text"]).strip().partition("|")
+                say, sub = say.strip(), (sub or say).strip()
+                lines.append({"say": say if sep else scriptgen.to_speech(sub), "sub": sub})
+                if str(r.get("scene") or "").strip():
+                    scene_text[str(i)] = str(r["scene"]).strip()
+            old = {sh["line"]: sh for sh in doc.get("shots", [])}
+            n_img = len(run["images"])
+            doc["lines"] = lines
+            doc["shots"] = [{**old.get(i, {"desc": "", "prompt_en": ""}), "line": i,
+                             **({"image": old.get(i, {}).get("image") or ((i - 1) % n_img) + 1} if n_img else {})}
+                            for i in range(1, len(lines) + 1)]
+        p.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
+        update_run(rdir, lambda r: r["variants"][k].update(title=doc["title"], hook=doc["hook"], scene_text=scene_text))
+    return list_auto_one(rdir)
+
+
+@app.post("/api/auto/{rid}/rewrite")
+def rewrite_auto_variant(rid: str, body: dict = Body(...)) -> dict:
+    rdir = auto_dir(rid)
+    k = int(body["k"])
+    if run_entry(rdir)["variants"][k].get("status") not in ("chờ duyệt", "lỗi"):
+        raise HTTPException(400, "Chỉ viết lại được kịch bản chưa duyệt")
+    return {"job": start_auto_job(rid, "auto-rewrite", job_auto_rewrite, rdir, k)}
+
+
+@app.post("/api/auto/{rid}/approve")
+def approve_auto(rid: str) -> dict:
+    rdir = auto_dir(rid)
+    vs = run_entry(rdir)["variants"]
+    if not any(v.get("include") and v.get("status") == "chờ duyệt" for v in vs):
+        raise HTTPException(400, "Hãy chọn ít nhất một kịch bản để tạo video")
+    return {"job": start_auto_job(rid, "auto-produce", job_auto_produce, rdir)}
+
+
+@app.post("/api/auto/{rid}/reopen")
+def reopen_auto_variant(rid: str, body: dict = Body(...)) -> dict:
+    """Back to step 1 for one variant: its voice and clips are dropped (they no longer match the text)."""
+    rdir = auto_dir(rid)
+    k = int(body["k"])
+    if auto_busy(rid):
+        raise HTTPException(400, "Đang chạy, đợi xong đã.")
+    for old in (rdir / "clips").glob(f"v{k + 1}-canh*.*") if (rdir / "clips").exists() else []:
+        old.unlink()
+
+    def back(r):
+        v = r["variants"][k]
+        for key in ("voice_id", "total", "scenes", "clips", "error"):
+            v.pop(key, None)
+        v.update(status="chờ duyệt", include=True)
+        r["status"] = "chờ duyệt kịch bản"
+    update_run(rdir, back)
+    return list_auto_one(rdir)
+
+
+@app.post("/api/auto/{rid}/render")
+def render_auto_variant(rid: str, body: dict = Body(...)) -> dict:
+    rdir = auto_dir(rid)
+    k = int(body["k"])
+    variant_of(rdir, k)
+    return {"job": start_auto_job(rid, "auto-render", job_render_variant, rdir, k)}
+
+
+@app.delete("/api/auto/{rid}")
+def delete_auto(rid: str) -> dict:
+    d = AUTO / safe_id(rid)
+    if not (d / "run.json").exists():
+        raise HTTPException(404, "Không tìm thấy")
+    shutil.rmtree(d)
     return {"ok": True}
 
 

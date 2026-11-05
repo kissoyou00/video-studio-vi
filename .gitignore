@@ -16,3 +16,6 @@ refs/
 *.mov
 *.wav
 *.mp3
+
+# Talking-model add-on (SadTalker code, its venv and checkpoints), set up by install.ps1 -WithTalking
+talker/

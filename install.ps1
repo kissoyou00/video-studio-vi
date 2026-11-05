@@ -2,7 +2,7 @@
 # Run from this folder:   powershell -ExecutionPolicy Bypass -File install.ps1
 # Creates .venv (app + VieNeu voice) and .venv-whisper (offline transcription), installs ffmpeg if
 # missing, and puts a "Video Studio" shortcut on the Desktop. Re-running is safe.
-param([switch]$CpuOnly, [switch]$NoShortcut, [switch]$NoOllama)
+param([switch]$CpuOnly, [switch]$NoShortcut, [switch]$NoOllama, [switch]$WithTalking)
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $here
@@ -68,6 +68,11 @@ if (-not $NoShortcut) {
     $s.Description = "Dung video va tao giong doc (chay an, tat bang nut trong ung dung)"
     $s.IconLocation = "$env:SystemRoot\System32\imageres.dll,18"
     $s.Save()
+}
+
+# --- optional: presenter lip-sync (SadTalker), ~4 GB --------------------------------
+if ($WithTalking) {
+    if ($CpuOnly) { & (Join-Path $here "install_talker.ps1") -CpuOnly } else { & (Join-Path $here "install_talker.ps1") }
 }
 
 Write-Host "`nXong. Bam dup 'Video Studio' tren Desktop de mo. Lan dau dung, model giong doc (~260 MB) va Whisper large-v3 (~3 GB) se tu tai; AI viet kich ban (gemma3:4b, ~3.4 GB) tai o lan viet dau tien." -ForegroundColor Green

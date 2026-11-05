@@ -8,3 +8,5 @@ python-multipart
 soundfile
 numpy
 anthropic   # optional Claude engine for the script writer (user's own API key)
+rembg       # cuts the presenter out of their photo (automatic videos)
+pillow

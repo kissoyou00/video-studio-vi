@@ -14,6 +14,35 @@ Nhật ký chạy được ghi vào `%USERPROFILE%\VideoStudio\studio.log`. Nế
 
 Dự án, video đã xuất và giọng đọc được lưu ở `%USERPROFILE%\VideoStudio`.
 
+## Video tự động
+
+Tab **⚡ Video tự động**: đưa ảnh + vài dòng gợi ý, ra 2–4 video hoàn chỉnh (giọng đọc, phụ đề, Hook, End card, nhạc), mỗi video một hướng kịch bản khác nhau để thử xem bản nào hiệu quả hơn. Làm theo 3 bước: **1. Hoàn thiện kịch bản → 2. Tạo video → 3. Dựng hoàn thiện** (thanh bước hiện ở mỗi lần tạo).
+
+1. Kéo thả **ảnh sản phẩm** (không bắt buộc, tối đa 10 ảnh). Không có ảnh thì video dùng nền màu chuyển động.
+2. **Người mẫu** (không bắt buộc): chọn ảnh một người, chụp rõ, mặt nhìn thẳng. Ứng dụng tự tách nền, cho người mẫu trượt vào và đứng giới thiệu ở góc dưới (mỗi video một bên), ảnh sản phẩm thu nhỏ sang phía còn lại; lời thoại viết theo kiểu người mẫu nói với người xem. Tick **Người mẫu nhép miệng** để mặt người mẫu tự nói theo giọng đọc (cần cài thêm, xem dưới; chậm: mỗi video 30 giây lâu thêm khoảng 5–6 phút trên card 4 GB). Bắt buộc tick xác nhận được người trong ảnh cho phép dùng hình ảnh. Giọng đọc nên chọn hợp với người mẫu (nam/nữ) hoặc dùng giọng đã clone của chính người đó.
+3. Viết **gợi ý nội dung**: sản phẩm là gì, ưu điểm, giá, ưu đãi, khách hàng tiêu biểu, số điện thoại…
+4. Chọn thời lượng, giọng điệu, số video (2–4), giọng đọc (có sẵn hoặc giọng đã clone), khung hình, nhạc nền nếu có.
+   **Đã có kịch bản ở tab 📝 Kịch bản?** Mở kịch bản đó, bấm **⚡ Tạo video từ kịch bản này** (hoặc chọn nó ở ô **Kịch bản** của tab Video tự động). Ứng dụng dùng nguyên lời thoại và cảnh quay của kịch bản đó (1 video, bản sao nên sửa ở đây không đổi bản gốc), bỏ qua bước AI viết; cảnh nào thiếu mô tả thì AI viết thêm cho Muse.
+5. **Bước 1, kịch bản:** bấm **✍️ Bước 1: Viết kịch bản** (hoặc **Dùng kịch bản đã chọn**). AI xem ảnh (bấm "AI thấy gì trong ảnh" để xem lại) và viết mỗi video một kịch bản theo một hướng: nêu vấn đề → giải pháp; lợi ích nổi bật trước; câu hỏi gây tò mò; bằng chứng thật. Mỗi bản khoảng 1 phút. Sau đó ứng dụng **dừng lại chờ bạn duyệt**: sửa tên, Hook, End card, từng câu thoại (số, giá, ngày cứ viết bằng chữ số, máy tự đọc đúng), thêm/bỏ câu, và với chế độ Muse thì sửa cả cảnh tương ứng mỗi câu. Bấm **Lưu**. Bản chưa ưng thì bấm **✍️ AI viết lại bản này**; bản không dùng thì bỏ tick.
+6. **Bước 2, tạo video:** bấm **✅ Duyệt … kịch bản & tạo video**. Lúc này mới đọc giọng. Chế độ ảnh chuyển động thì tự dựng luôn (mỗi câu một cảnh, ảnh phóng chậm trên nền mờ hoặc lia dọc ảnh, tiếng vút ở chỗ đổi ảnh, mỗi video một kiểu chuyển cảnh). Chế độ Muse thì hiện danh sách cảnh để lấy clip (xem dưới).
+7. **Bước 3, dựng hoàn thiện:** xem, tải MP4. Muốn sửa lời một video đã làm thì bấm **↩ Sửa lại kịch bản** (giọng đọc và clip của video đó sẽ làm lại).
+
+### Clip AI từ Muse (muse.ai)
+
+Ở mục **Hình cho từng cảnh**, chọn **Clip AI từ Muse**. Ở bước 1, mỗi câu thoại có thêm một ô "cảnh cho Muse" (AI viết sẵn, bạn sửa; AI trên máy đôi khi vẫn nhắc logo hay chữ trên màn hình, nên xoá các chi tiết đó). Sau khi duyệt và đọc giọng, ứng dụng hiện danh sách cảnh, mỗi cảnh có sẵn một yêu cầu tạo video viết cho Muse (ví dụ "Tạo một video dọc 9:16 dài 5 giây: một nhân viên kỹ thuật đang lắp màn hình quảng cáo trên tường…, máy quay tiến chậm…"), vẫn sửa được ngay trong ô.
+
+Với mỗi cảnh:
+1. Bấm **Chép & mở Muse**: yêu cầu được chép sẵn, trang muse.ai mở ra (đăng nhập tài khoản của bạn).
+2. Trong ô chat Muse: Ctrl+V, Enter. Muse tạo video 5 giây trong khoảng 30 giây.
+3. Bấm "…" ở video → **Download**. Ứng dụng tự nhận file vừa tải về thư mục Downloads (trong 10 phút) và gán vào đúng cảnh. Hoặc bấm **Chọn file** để chọn tay.
+
+Có clip cho các cảnh muốn dùng (không cần đủ hết) thì bấm **🎬 Dựng video**: cảnh có clip dùng clip AI (cắt hoặc kéo chậm cho khớp lời), cảnh chưa có dùng ảnh chuyển động; người mẫu, phụ đề, Hook, nhạc vẫn ghép như thường. Thêm clip rồi bấm **Dựng lại** bao nhiêu lần cũng được. Muse không có API công khai nên bước tạo clip phải làm trên trang Muse; mỗi clip dùng một lượt trong tài khoản của bạn.
+
+**Cài phần người mẫu nhép miệng** (một lần, tải khoảng 4 GB): mở PowerShell trong thư mục ứng dụng, chạy
+`powershell -ExecutionPolicy Bypass -File install_talker.ps1`, rồi tắt và mở lại Video Studio. Phần này dùng SadTalker chạy trên máy: chỉ khuôn mặt cử động (miệng, mắt), người và tay đứng yên.
+
+Với AI trên máy, 3 video 30 giây mất khoảng 6–10 phút (chọn "Đọc 3 lần" thì lâu hơn). Video lưu ở `%USERPROFILE%\VideoStudio\auto`. Chữ AI chép từ ảnh đôi khi sai dấu; ứng dụng không in chữ đó lên video, nhưng hãy đọc lại lời thoại trước khi đăng.
+
 ## Viết kịch bản
 
 Tab **📝 Kịch bản** viết sẵn lời đọc và cảnh quay từ vài dòng mô tả.
@@ -31,7 +60,7 @@ Tab **📝 Kịch bản** viết sẵn lời đọc và cảnh quay từ vài d�
 | AI | Chi phí | Ghi chú |
 |----|---------|---------|
 | **Trên máy** (Ollama + Gemma 3 4B) | Miễn phí, không cần mạng | Khoảng 1 phút một kịch bản. Lần đầu tự tải model ~3,4 GB. Văn khá ổn, đôi khi thêm chi tiết chung chung, nên đọc lại. |
-| **Google Gemini** | Có lượt miễn phí mỗi ngày | Lấy khoá tại aistudio.google.com/apikey. Nhanh, văn tốt. |
+| **Google Gemini** | Miễn phí với khoá tạo ở Google AI Studio (không cần thẻ), có giới hạn lượt mỗi phút/ngày | Lấy khoá tại aistudio.google.com/apikey. Khoảng 30 giây một kịch bản, văn tốt hơn AI trên máy, xem ảnh tốt hơn. Để "Tự chọn model Flash": các model mới hay báo quá tải, ứng dụng tự chuyển sang model khác. Với gói miễn phí, Google có thể dùng nội dung gửi lên để cải thiện sản phẩm, nên đừng gửi thông tin nhạy cảm. |
 | **Claude** | Trả phí theo lượt (vài trăm đến vài nghìn đồng một kịch bản) | Lấy khoá tại console.anthropic.com. Văn hay nhất. Có thể chọn Opus (hay nhất), Sonnet hoặc Haiku (rẻ nhất). |
 
 Khoá API chỉ lưu trên máy (`%APPDATA%\VideoStudio\ai-settings.json`), ngoài thư mục dữ liệu, và trang web chỉ hiện 4 ký tự cuối. Kịch bản đã viết lưu ở `%USERPROFILE%\VideoStudio\scripts`.
