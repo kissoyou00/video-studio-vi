@@ -19,4 +19,10 @@ licence in `helpers/LICENSE-video-use`. Changes made here:
 | [MOSS-Audio-Tokenizer-Nano](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano) | see model card | used by VieNeu |
 | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) + Whisper large-v3 | MIT | offline transcription |
 | [FFmpeg](https://ffmpeg.org) (Gyan.FFmpeg build via winget) | GPL | cutting, effects, encoding |
+| [Ollama](https://ollama.com) (via winget) | MIT | runs the offline script-writing model |
+| [Gemma 3 4B](https://ollama.com/library/gemma3) (`gemma3:4b`) | [Gemma Terms of Use](https://ai.google.dev/gemma/terms) | default offline script writer; commercial use allowed under Google's terms and prohibited-use policy |
+| [Anthropic Python SDK](https://github.com/anthropics/anthropic-sdk-python) (`anthropic`) | MIT | optional Claude engine, user's own API key |
 | PyTorch, FastAPI, Uvicorn, NumPy, soundfile | BSD / MIT | |
+
+Claude and Gemini are paid or quota-limited online services used only with the user's own API key,
+under the provider's terms.

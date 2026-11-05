@@ -96,6 +96,7 @@
 <header>
   <h1>Video <span>Studio</span></h1>
   <nav class="tabs">
+    <button data-tab="script">📝 Kịch bản</button>
     <button data-tab="edit" class="on">🎬 Dựng video</button>
     <button data-tab="voice">🎙️ Tạo giọng đọc</button>
   </nav>
@@ -104,6 +105,91 @@
 </header>
 
 <main>
+<!-- ============ KỊCH BẢN ============ -->
+<section id="tab-script" class="hidden">
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2><span class="n">1</span> Nội dung video</h2>
+        <label class="f">Video nói về gì? Ghi đủ thông tin cần có: tên, sản phẩm, giá, ngày, địa chỉ, ưu đãi…</label>
+        <textarea id="sBrief" style="min-height:130px" placeholder="Ví dụ: Quảng cáo quán cà phê muối Nhà Mây ở Đà Lạt, khai trương giảm 30% từ 15/11 đến 20/11, có view đồi thông, mở cửa 7h đến 22h."></textarea>
+        <div class="row" style="margin-top:8px">
+          <label class="muted">Thời lượng <select id="sDur" style="width:auto"></select></label>
+          <label class="muted">Giọng điệu <select id="sStyle" style="width:auto">
+            <option value="vui">Trẻ trung, vui</option><option value="ban-hang">Bán hàng, thuyết phục</option>
+            <option value="chuyen-nghiep">Chuyên nghiệp</option><option value="ke-chuyen">Kể chuyện</option>
+            <option value="huong-dan">Hướng dẫn</option></select></label>
+        </div>
+        <label class="f">Người xem (không bắt buộc)</label>
+        <input type="text" id="sAud" placeholder="Ví dụ: sinh viên, dân văn phòng, chủ quán cà phê">
+        <div class="row" style="margin-top:10px">
+          <button class="btn primary" id="btnScript">✍️ Viết kịch bản</button>
+          <span class="muted" id="sEngineNote"></span>
+        </div>
+        <div class="job hidden" id="jobScript"></div>
+      </div>
+
+      <div class="card hidden" id="sResult">
+        <h2><span class="n">2</span> Kịch bản <span class="muted" id="sMeta" style="font-weight:400"></span></h2>
+        <label class="f">Tên kịch bản</label>
+        <input type="text" id="rTitle">
+        <div class="row" style="margin-top:4px; align-items:flex-start">
+          <div style="flex:1;min-width:160px"><label class="f">Hook (chữ to 3 giây đầu)</label><input type="text" id="rHook"></div>
+          <div style="flex:1;min-width:160px"><label class="f">Lower third (thanh tên)</label><input type="text" id="rLower"></div>
+          <div style="flex:1;min-width:160px"><label class="f">End card (lời kết)</label><input type="text" id="rEnd"></div>
+        </div>
+        <label class="f">Lời đọc: mỗi dòng một câu. Phần trước <b>|</b> là chữ máy đọc (số đã đổi thành chữ), phần sau là phụ đề. Sửa thoải mái; dòng không có <b>|</b> sẽ tự đổi số khi lưu.</label>
+        <textarea id="rVoice" style="min-height:200px"></textarea>
+        <div class="muted" id="rEst" style="margin-top:4px"></div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="btnSSave">Lưu chỉnh sửa</button>
+          <button class="btn primary" id="btnSVoice">🎙️ Tạo giọng đọc từ kịch bản này</button>
+          <button class="btn" id="btnSFx" title="Điền Hook, Lower third, End card vào hiệu ứng của dự án đang mở và bật chúng">🎬 Điền chữ vào dự án đang mở</button>
+        </div>
+        <div class="muted" id="sSaved" style="margin-top:6px"></div>
+      </div>
+
+      <div class="card hidden" id="sShotsCard">
+        <h2><span class="n">3</span> Danh sách cảnh quay</h2>
+        <p class="muted" style="margin:0 0 6px">Mỗi câu một cảnh: tự quay theo mô tả, hoặc chép prompt tiếng Anh dán vào công cụ tạo video AI (Google Flow, Kling, Seedance…), tải clip về rồi kéo vào tab Dựng video.</p>
+        <div class="row"><button class="btn small" id="btnCopyAll">Chép tất cả prompt</button><span class="muted" id="copyNote"></span></div>
+        <div id="sShots" style="margin-top:6px"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>🤖 AI viết kịch bản</h2>
+        <label class="row"><input type="radio" name="sEngine" value="ollama"> <span><b>Trên máy (miễn phí, offline)</b></span></label>
+        <div class="muted" style="margin:2px 0 0 24px" id="ollamaNote"></div>
+        <select id="sOllamaModel" style="margin:6px 0 0 24px; width:calc(100% - 24px)"></select>
+
+        <label class="row" style="margin-top:14px"><input type="radio" name="sEngine" value="gemini"> <span><b>Google Gemini</b> <span class="muted">(cần khoá API, có lượt miễn phí)</span></span></label>
+        <div style="margin-left:24px">
+          <input type="password" id="sGemKey" autocomplete="off" placeholder="Dán khoá API Gemini" style="margin-top:6px">
+          <div class="row" style="margin-top:6px"><select id="sGemModel" style="flex:1"><option value="">Tự chọn model Flash tốt nhất</option></select>
+            <button class="btn small" id="btnGemModels">Tải danh sách</button></div>
+          <div class="muted">Lấy khoá miễn phí tại <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a></div>
+        </div>
+
+        <label class="row" style="margin-top:14px"><input type="radio" name="sEngine" value="claude"> <span><b>Claude</b> <span class="muted">(cần khoá API, trả phí, văn hay nhất)</span></span></label>
+        <div style="margin-left:24px">
+          <input type="password" id="sClKey" autocomplete="off" placeholder="Dán khoá API Claude (sk-ant-…)" style="margin-top:6px">
+          <select id="sClModel" style="margin-top:6px"></select>
+          <div class="muted">Lấy khoá tại <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a></div>
+        </div>
+        <div class="row" style="margin-top:12px"><button class="btn primary" id="btnAiSave">Lưu cài đặt</button><span class="muted" id="aiSaved"></span></div>
+        <div class="muted" style="margin-top:8px">Khoá API chỉ lưu trên máy này (thư mục %APPDATA%\VideoStudio), không gửi đi đâu ngoài nhà cung cấp AI bạn chọn.</div>
+      </div>
+
+      <div class="card">
+        <h2>Kịch bản đã viết</h2>
+        <div id="scriptList"><p class="muted">Chưa có.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ============ DỰNG VIDEO ============ -->
 <section id="tab-edit">
   <div class="card">
@@ -350,6 +436,7 @@ function showTab(t) {
   $$(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   $("#tab-edit").classList.toggle("hidden", t !== "edit");
   $("#tab-voice").classList.toggle("hidden", t !== "voice");
+  $("#tab-script").classList.toggle("hidden", t !== "script");
   store.set("tab", t);
 }
 
@@ -780,6 +867,141 @@ function fillVoiceSelect() {
   if (P) $("#voiceSel").value = P.settings.voice_id || "";
 }
 
+// ---------- script writer ----------
+let AI = null, SCRIPTS = [], CUR = null;
+const ENGINE_NAME = { ollama: "AI trên máy", gemini: "Gemini", claude: "Claude" };
+function engineVal() { return $("input[name=sEngine]:checked")?.value || "ollama"; }
+function renderAi() {
+  $$("input[name=sEngine]").forEach(r => r.checked = r.value === AI.engine);
+  $("#sDur").innerHTML = AI.durations.map(d => `<option value="${d}" ${d === 30 ? "selected" : ""}>${d < 60 ? d + " giây" : d / 60 + " phút"}</option>`).join("");
+  const models = [...new Set([AI.ollama_model, ...AI.ollama_models])];
+  $("#sOllamaModel").innerHTML = models.map(m => `<option ${m === AI.ollama_model ? "selected" : ""}>${esc(m)}</option>`).join("");
+  $("#ollamaNote").textContent = !AI.ollama_installed ? "Chưa cài Ollama: cài bằng lệnh winget install Ollama.Ollama"
+    : AI.ollama_models.includes(AI.ollama_model) ? "Đã sẵn sàng. Mỗi kịch bản mất khoảng 1 phút."
+    : "Lần đầu sẽ tự tải model (khoảng 3 GB).";
+  $("#sClModel").innerHTML = AI.claude_models.map(m => `<option value="${m.id}" ${m.id === AI.claude_model ? "selected" : ""}>${esc(m.label)}</option>`).join("");
+  $("#sGemKey").value = ""; $("#sClKey").value = "";
+  $("#sGemKey").placeholder = AI.gemini_key_hint ? `Đã lưu khoá ${AI.gemini_key_hint} (dán khoá mới để thay)` : "Dán khoá API Gemini";
+  $("#sClKey").placeholder = AI.claude_key_hint ? `Đã lưu khoá ${AI.claude_key_hint} (dán khoá mới để thay)` : "Dán khoá API Claude (sk-ant-…)";
+  if (AI.gemini_model && ![...$("#sGemModel").options].some(o => o.value === AI.gemini_model))
+    $("#sGemModel").insertAdjacentHTML("beforeend", `<option>${esc(AI.gemini_model)}</option>`);
+  $("#sGemModel").value = AI.gemini_model || "";
+  $("#sEngineNote").textContent = "Dùng: " + ENGINE_NAME[AI.engine];
+}
+async function loadAi() { AI = await api("GET", "/api/ai-settings"); renderAi(); }
+async function saveAi(extra = {}) {
+  const body = { engine: engineVal(), ollama_model: $("#sOllamaModel").value, claude_model: $("#sClModel").value,
+                 gemini_model: $("#sGemModel").value, ...extra };
+  if ($("#sGemKey").value.trim()) body.gemini_key = $("#sGemKey").value.trim();
+  if ($("#sClKey").value.trim()) body.claude_key = $("#sClKey").value.trim();
+  AI = await api("PUT", "/api/ai-settings", body); renderAi();
+}
+$("#btnAiSave").onclick = async () => {
+  try { await saveAi(); $("#aiSaved").textContent = "Đã lưu."; } catch (e) { $("#aiSaved").textContent = "Lỗi: " + e.message; }
+  setTimeout(() => $("#aiSaved").textContent = "", 3000);
+};
+$$("input[name=sEngine]").forEach(r => r.onchange = () => saveAi().catch(e => alert(e.message)));
+$("#btnGemModels").onclick = async () => {
+  try {
+    if ($("#sGemKey").value.trim()) await saveAi();
+    const { models } = await api("GET", "/api/ai-settings/gemini-models");
+    $("#sGemModel").innerHTML = `<option value="">Tự chọn model Flash tốt nhất</option>` + models.map(m => `<option>${esc(m)}</option>`).join("");
+    $("#sGemModel").value = AI.gemini_model || "";
+  } catch (e) { alert(e.message); }
+};
+
+$("#btnScript").onclick = async () => {
+  const brief = $("#sBrief").value.trim();
+  if (brief.length < 10) { alert("Hãy viết nội dung video rõ hơn."); return; }
+  const btn = $("#btnScript"); btn.disabled = true;
+  try {
+    if ($("#sGemKey").value.trim() || $("#sClKey").value.trim()) await saveAi();
+    const { job } = await api("POST", "/api/scripts/generate", { brief, duration: +$("#sDur").value, style: $("#sStyle").value,
+      audience: $("#sAud").value, engine: engineVal() });
+    store.set("scriptBrief", brief);
+    watchJob(job, $("#jobScript"), async j => {
+      btn.disabled = false;
+      if (j.status === "done") { await loadScripts(); openScript(j.result.id); }
+    });
+  } catch (e) { btn.disabled = false; alert(e.message); }
+};
+
+async function loadScripts() {
+  SCRIPTS = await api("GET", "/api/scripts");
+  $("#scriptList").innerHTML = SCRIPTS.length ? SCRIPTS.map(s => `
+    <div class="vt"><b>${esc(s.title)}</b>
+      <div class="muted">${new Date(s.created * 1000).toLocaleString("vi-VN")} · ${s.lines.length} câu · ~${s.est_seconds} giây · ${ENGINE_NAME[s.engine] || s.engine}</div>
+      <div class="row" style="margin-top:4px"><button class="btn small" data-sopen="${s.id}">Mở</button><button class="btn small" data-sdel="${s.id}">Xoá</button></div>
+    </div>`).join("") : `<p class="muted">Chưa có.</p>`;
+  $$("[data-sopen]").forEach(b => b.onclick = () => openScript(b.dataset.sopen));
+  $$("[data-sdel]").forEach(b => b.onclick = async () => {
+    if (!confirm("Xoá kịch bản này?")) return;
+    await api("DELETE", `/api/scripts/${b.dataset.sdel}`);
+    if (CUR?.id === b.dataset.sdel) { CUR = null; $("#sResult").classList.add("hidden"); $("#sShotsCard").classList.add("hidden"); }
+    loadScripts();
+  });
+}
+function openScript(id) {
+  CUR = SCRIPTS.find(s => s.id === id); if (!CUR) return;
+  $("#sResult").classList.remove("hidden"); $("#sShotsCard").classList.remove("hidden");
+  $("#rTitle").value = CUR.title; $("#rHook").value = CUR.hook; $("#rLower").value = CUR.lower_third; $("#rEnd").value = CUR.end_card;
+  $("#rVoice").value = CUR.voice_text;
+  $("#sMeta").textContent = `· ${ENGINE_NAME[CUR.engine] || CUR.engine}${CUR.model ? " " + CUR.model : ""}`;
+  $("#sBrief").value = CUR.brief;
+  renderScriptEst(); renderShots(); $("#sSaved").textContent = "";
+  $("#sResult").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function renderScriptEst() {
+  const lines = $("#rVoice").value.split("\n").map(l => l.split("|")[0].trim()).filter(Boolean);
+  const words = lines.reduce((a, l) => a + l.split(/\s+/).length, 0);
+  $("#rEst").textContent = `${lines.length} câu, ${words} chữ, đọc khoảng ${Math.round(words / 2.7)} giây (chưa tính nghỉ giữa câu).`;
+}
+$("#rVoice").oninput = renderScriptEst;
+function renderShots() {
+  const subs = $("#rVoice").value.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("#")).map(l => (l.split("|")[1] ?? l).trim());
+  $("#sShots").innerHTML = CUR.shots.map((s, i) => `
+    <div class="vt">
+      <div><span class="badge">Cảnh ${s.line}</span> <span class="muted">${esc(subs[s.line - 1] || "")}</span></div>
+      <label class="f">Mô tả cảnh</label><input type="text" data-shot="${i}" data-k="desc" value="${esc(s.desc)}">
+      <label class="f">Prompt video AI (tiếng Anh)</label>
+      <div class="row"><input type="text" data-shot="${i}" data-k="prompt_en" value="${esc(s.prompt_en)}" style="flex:1">
+        <button class="btn small" data-copy="${i}">Chép</button></div>
+    </div>`).join("");
+  $$("[data-shot]").forEach(el => el.oninput = () => { CUR.shots[+el.dataset.shot][el.dataset.k] = el.value; });
+  $$("[data-copy]").forEach(b => b.onclick = () => copyText(CUR.shots[+b.dataset.copy].prompt_en, b));
+}
+async function copyText(text, el) {
+  try { await navigator.clipboard.writeText(text); }
+  catch { const t = document.createElement("textarea"); t.value = text; document.body.append(t); t.select(); document.execCommand("copy"); t.remove(); }
+  const old = el.textContent; el.textContent = "Đã chép"; setTimeout(() => el.textContent = old, 1500);
+}
+$("#btnCopyAll").onclick = e => copyText(CUR.shots.map(s => `Cảnh ${s.line}: ${s.prompt_en}`).join("\n\n"), e.target);
+async function saveScript() {
+  const r = await api("PUT", `/api/scripts/${CUR.id}`, { title: $("#rTitle").value, hook: $("#rHook").value, lower_third: $("#rLower").value,
+    end_card: $("#rEnd").value, voice_text: $("#rVoice").value, shots: CUR.shots });
+  await loadScripts(); CUR = SCRIPTS.find(s => s.id === r.id);
+  $("#rVoice").value = CUR.voice_text; renderScriptEst(); renderShots();
+  return CUR;
+}
+$("#btnSSave").onclick = async () => {
+  try { await saveScript(); $("#sSaved").textContent = "Đã lưu."; } catch (e) { alert(e.message); }
+};
+$("#btnSVoice").onclick = async () => {
+  try { await saveScript(); } catch (e) { alert(e.message); return; }
+  $("#vText").value = CUR.voice_text; $("#vTitle").value = CUR.title; vLabels();
+  showTab("voice"); window.scrollTo({ top: 0, behavior: "smooth" });
+};
+$("#btnSFx").onclick = async () => {
+  if (!P) { alert("Hãy mở hoặc tạo một dự án ở tab Dựng video trước."); return; }
+  const part = { fx_hook_on: !!$("#rHook").value.trim(), fx_hook: $("#rHook").value.trim(),
+                 fx_lower_on: !!$("#rLower").value.trim(), fx_lower: $("#rLower").value.trim(),
+                 fx_end_on: !!$("#rEnd").value.trim(), fx_end: $("#rEnd").value.trim() };
+  Object.assign(P.settings, part);
+  await saveProject({ settings: part });
+  renderSettings();
+  $("#sSaved").textContent = `Đã điền Hook, Lower third, End card vào dự án "${P.name}".`;
+};
+
 // ---------- quit (the server runs without a console window) ----------
 $("#btnQuit").onclick = async () => {
   const { running } = await api("GET", "/api/running");
@@ -797,7 +1019,7 @@ $("#btnQuit").onclick = async () => {
   INFO = await api("GET", "/api/info");
   $("#workdir").textContent = "Dữ liệu: " + INFO.work;
   voiceOptions(); vLabels();
-  await Promise.all([loadMine(), loadVoices()]);
+  await Promise.all([loadMine(), loadVoices(), loadAi(), loadScripts()]);
   await loadProjects();
   showTab(store.get("tab") || "edit");
 })();

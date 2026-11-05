@@ -2,7 +2,7 @@
 # Run from this folder:   powershell -ExecutionPolicy Bypass -File install.ps1
 # Creates .venv (app + VieNeu voice) and .venv-whisper (offline transcription), installs ffmpeg if
 # missing, and puts a "Video Studio" shortcut on the Desktop. Re-running is safe.
-param([switch]$CpuOnly, [switch]$NoShortcut)
+param([switch]$CpuOnly, [switch]$NoShortcut, [switch]$NoOllama)
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $here
@@ -24,6 +24,15 @@ $links = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Links"
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -and -not (Test-Path (Join-Path $links "ffmpeg.exe"))) {
     winget install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements --silent
 } else { Write-Host "ffmpeg da co." }
+
+# --- Ollama: offline AI for the script writer (tab "Kich ban"); model gemma3:4b downloads on first use
+if (-not $NoOllama) {
+    Step "Kiem tra Ollama (AI viet kich ban chay tren may)"
+    $ollama = Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe"
+    if (-not (Get-Command ollama -ErrorAction SilentlyContinue) -and -not (Test-Path $ollama)) {
+        winget install --id Ollama.Ollama -e --accept-source-agreements --accept-package-agreements --silent
+    } else { Write-Host "Ollama da co." }
+}
 
 # --- .venv: app + VieNeu --------------------------------------------------------
 Step "Tao moi truong .venv (ung dung + giong doc VieNeu)"
@@ -61,4 +70,4 @@ if (-not $NoShortcut) {
     $s.Save()
 }
 
-Write-Host "`nXong. Bam dup 'Video Studio' tren Desktop de mo. Lan dau dung, model giong doc (~260 MB) va Whisper large-v3 (~3 GB) se tu tai." -ForegroundColor Green
+Write-Host "`nXong. Bam dup 'Video Studio' tren Desktop de mo. Lan dau dung, model giong doc (~260 MB) va Whisper large-v3 (~3 GB) se tu tai; AI viet kich ban (gemma3:4b, ~3.4 GB) tai o lan viet dau tien." -ForegroundColor Green

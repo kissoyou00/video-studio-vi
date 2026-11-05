@@ -68,6 +68,7 @@ ENV = {**{k: v for k, v in os.environ.items() if k.upper() not in _VENV_VARS},
        "WHISPER_VAD": "0"}  # VAD drops excited/quiet speech; for editing, missing words are worse than extra ones
 
 sys.path.insert(0, str(HELPERS))
+import scriptgen  # noqa: E402
 from grade import PRESETS as GRADE_PRESETS  # noqa: E402
 from render import SUB_FORCE_STYLE, build_master_srt  # noqa: E402
 
@@ -1199,6 +1200,171 @@ def rename_myvoice(vid: str, body: dict = Body(...)) -> dict:
 @app.delete("/api/myvoices/{vid}")
 def delete_myvoice(vid: str) -> dict:
     shutil.rmtree(myvoice_dir(vid))
+    return {"ok": True}
+
+
+# -------- script writer (📝 Kịch bản tab) -----------------------------------
+
+SCRIPTS = WORK / "scripts"
+SCRIPTS.mkdir(parents=True, exist_ok=True)
+# API keys live outside WORK: everything under WORK is served at /files.
+AI_SETTINGS = Path(os.environ.get("STUDIO_SECRETS") or Path(os.environ.get("APPDATA") or HOME) / "VideoStudio" / "ai-settings.json")
+AI_DEFAULTS = {"engine": "ollama", "ollama_model": scriptgen.DEFAULT_OLLAMA_MODEL,
+               "claude_key": "", "claude_model": scriptgen.CLAUDE_MODELS[0][0], "gemini_key": "", "gemini_model": ""}
+DURATIONS = (15, 30, 45, 60, 90, 120)
+
+
+def ai_settings() -> dict:
+    try:
+        return {**AI_DEFAULTS, **json.loads(AI_SETTINGS.read_text(encoding="utf-8"))}
+    except (OSError, ValueError):
+        return dict(AI_DEFAULTS)
+
+
+def ai_public(s: dict) -> dict:
+    """Settings for the page: keys are never sent back, only whether one is saved and its last 4 characters."""
+    out = {k: v for k, v in s.items() if not k.endswith("_key")}
+    for k in ("claude_key", "gemini_key"):
+        out[k.replace("_key", "_key_hint")] = ("…" + s[k][-4:]) if s[k] else ""
+    out["ollama_installed"] = bool(scriptgen.ollama_exe())
+    out["ollama_running"] = scriptgen.ollama_up()
+    out["ollama_models"] = scriptgen.ollama_models() if out["ollama_running"] else []
+    out["claude_models"] = [{"id": i, "label": l} for i, l in scriptgen.CLAUDE_MODELS]
+    out["styles"] = list(scriptgen.STYLES)
+    out["durations"] = list(DURATIONS)
+    return out
+
+
+def script_path(sid: str) -> Path:
+    p = SCRIPTS / f"{safe_id(sid)}.json"
+    if not p.exists():
+        raise HTTPException(404, "Không tìm thấy kịch bản")
+    return p
+
+
+def script_entry(d: dict) -> dict:
+    return {**d, "voice_text": scriptgen.voice_text(d["lines"]),
+            "words": sum(len(l["say"].split()) for l in d["lines"]),
+            "est_seconds": round(sum(len(l["say"].split()) for l in d["lines"]) / scriptgen.WORDS_PER_SECOND)}
+
+
+def job_script(job: dict, req: dict) -> dict:
+    s = ai_settings()
+    engine = req.get("engine") or s["engine"]
+    prompt, n = scriptgen.user_prompt(req["brief"], req["duration"], req.get("style", "vui"), req.get("audience", ""))
+    say = lambda m: log(job, m)  # noqa: E731
+    t0 = time.time()
+    try:
+        if engine == "ollama":
+            model = s["ollama_model"] or scriptgen.DEFAULT_OLLAMA_MODEL
+            with GPU:   # the local model needs the whole 4 GB card
+                TTS.unload(job)
+                raw = scriptgen.run_ollama(model, scriptgen.SYSTEM, prompt, say)
+        elif engine == "claude":
+            model = s["claude_model"]
+            raw = scriptgen.run_claude(s["claude_key"], model, scriptgen.SYSTEM, prompt, say)
+        elif engine == "gemini":
+            model = s["gemini_model"]
+            raw = scriptgen.run_gemini(s["gemini_key"], model, scriptgen.SYSTEM, prompt, say)
+        else:
+            raise scriptgen.ScriptError("Chưa chọn AI viết kịch bản.")
+        out = scriptgen.tidy(raw)
+    except scriptgen.ScriptError as e:
+        raise RuntimeError(str(e)) from None
+    sid = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4]
+    doc = {"id": sid, "created": time.time(), "brief": req["brief"], "duration": req["duration"],
+           "style": req.get("style", "vui"), "audience": req.get("audience", ""),
+           "engine": engine, "model": model or "", "seconds": round(time.time() - t0, 1), **out}
+    (SCRIPTS / f"{sid}.json").write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
+    log(job, f"Xong: {len(out['lines'])} câu, {len(out['shots'])} cảnh.")
+    return script_entry(doc)
+
+
+@app.get("/api/ai-settings")
+def get_ai_settings() -> dict:
+    return ai_public(ai_settings())
+
+
+@app.put("/api/ai-settings")
+def put_ai_settings(body: dict = Body(...)) -> dict:
+    s = ai_settings()
+    for k in ("engine", "ollama_model", "claude_model", "gemini_model"):
+        if k in body and isinstance(body[k], str):
+            s[k] = body[k].strip()
+    for k in ("claude_key", "gemini_key"):   # "" clears a key; a missing field keeps it
+        if k in body and isinstance(body[k], str):
+            s[k] = body[k].strip()
+    if s["engine"] not in ("ollama", "claude", "gemini"):
+        raise HTTPException(400, "AI không hợp lệ")
+    if s["claude_model"] not in dict(scriptgen.CLAUDE_MODELS):
+        s["claude_model"] = scriptgen.CLAUDE_MODELS[0][0]
+    AI_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+    AI_SETTINGS.write_text(json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8")
+    return ai_public(s)
+
+
+@app.get("/api/ai-settings/gemini-models")
+def get_gemini_models() -> dict:
+    key = ai_settings()["gemini_key"]
+    if not key:
+        raise HTTPException(400, "Chưa có khoá API Gemini")
+    try:
+        return {"models": scriptgen.gemini_models(key)}
+    except Exception as e:
+        raise HTTPException(400, f"Không lấy được danh sách model Gemini (khoá sai hoặc mất mạng): {e}")
+
+
+@app.post("/api/scripts/generate")
+def generate_script(body: dict = Body(...)) -> dict:
+    brief = str(body.get("brief") or "").strip()
+    if len(brief) < 10:
+        raise HTTPException(400, "Hãy viết nội dung video rõ hơn (ít nhất một câu).")
+    try:
+        duration = int(body.get("duration") or 30)
+    except ValueError:
+        duration = 30
+    req = {"brief": brief[:4000], "duration": min(max(duration, 10), 180), "style": str(body.get("style") or "vui"),
+           "audience": str(body.get("audience") or "")[:300], "engine": str(body.get("engine") or "")}
+    return {"job": start_job("script", job_script, req)}
+
+
+@app.get("/api/scripts")
+def list_scripts() -> list:
+    out = []
+    for p in sorted(SCRIPTS.glob("*.json"), reverse=True):
+        try:
+            out.append(script_entry(json.loads(p.read_text(encoding="utf-8"))))
+        except (OSError, ValueError, KeyError):
+            continue
+    return out
+
+
+@app.put("/api/scripts/{sid}")
+def update_script(sid: str, body: dict = Body(...)) -> dict:
+    """Save the user's edits. `voice_text` (the editable 'say | sub' lines) replaces the lines;
+    a line without '|' is re-spelled from its text, so typing '50k' still reads correctly."""
+    p = script_path(sid)
+    d = json.loads(p.read_text(encoding="utf-8"))
+    for k in ("title", "hook", "lower_third", "end_card"):
+        if isinstance(body.get(k), str):
+            d[k] = body[k].strip()[:80]
+    if isinstance(body.get("voice_text"), str):
+        lines = []
+        for say, sub in parse_script(body["voice_text"]):
+            lines.append({"say": scriptgen.to_speech(sub) if say == sub else say, "sub": sub})
+        if not lines:
+            raise HTTPException(400, "Kịch bản cần ít nhất một câu")
+        d["lines"] = lines
+    if isinstance(body.get("shots"), list):
+        d["shots"] = [{"line": int(s.get("line") or i + 1), "desc": str(s.get("desc") or ""), "prompt_en": str(s.get("prompt_en") or "")}
+                      for i, s in enumerate(body["shots"]) if isinstance(s, dict)]
+    p.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+    return script_entry(d)
+
+
+@app.delete("/api/scripts/{sid}")
+def delete_script(sid: str) -> dict:
+    script_path(sid).unlink()
     return {"ok": True}
 
 

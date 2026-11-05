@@ -14,6 +14,30 @@ Nhật ký chạy được ghi vào `%USERPROFILE%\VideoStudio\studio.log`. Nế
 
 Dự án, video đã xuất và giọng đọc được lưu ở `%USERPROFILE%\VideoStudio`.
 
+## Viết kịch bản
+
+Tab **📝 Kịch bản** viết sẵn lời đọc và cảnh quay từ vài dòng mô tả.
+
+1. Ghi **nội dung video**: video nói về gì, kèm mọi thông tin phải có (tên, sản phẩm, giá, ngày, giờ, địa chỉ, ưu đãi). AI được dặn không bịa thêm số liệu, nhưng vẫn nên đọc lại.
+2. Chọn **thời lượng** (15 giây đến 2 phút), **giọng điệu** (vui, bán hàng, chuyên nghiệp, kể chuyện, hướng dẫn) và người xem nếu muốn.
+3. Bấm **✍️ Viết kịch bản**. Kết quả gồm:
+   - **Lời đọc** từng câu. Số, giá, ngày, giờ, số điện thoại được đổi thành chữ để máy đọc đúng (ví dụ `25.000đ` → "hai mươi lăm nghìn đồng", `30/11` → "ba mươi tháng mười một"), phụ đề vẫn giữ chữ số. Sửa thoải mái rồi bấm **Lưu chỉnh sửa**; dòng mới gõ có số cũng tự đổi.
+   - **Hook, Lower third, End card**: bấm **🎬 Điền chữ vào dự án đang mở** để điền và bật các hiệu ứng này ở tab Dựng video.
+   - **Danh sách cảnh quay**: mỗi câu một cảnh, có mô tả tiếng Việt và prompt tiếng Anh. Bấm **Chép** rồi dán vào công cụ tạo video AI (Google Flow, Kling, Seedance…), tải clip về và kéo vào tab Dựng video.
+4. Bấm **🎙️ Tạo giọng đọc từ kịch bản này** để chuyển lời đọc sang tab Tạo giọng đọc.
+
+**Chọn AI viết** (khung bên phải):
+
+| AI | Chi phí | Ghi chú |
+|----|---------|---------|
+| **Trên máy** (Ollama + Gemma 3 4B) | Miễn phí, không cần mạng | Khoảng 1 phút một kịch bản. Lần đầu tự tải model ~3,4 GB. Văn khá ổn, đôi khi thêm chi tiết chung chung, nên đọc lại. |
+| **Google Gemini** | Có lượt miễn phí mỗi ngày | Lấy khoá tại aistudio.google.com/apikey. Nhanh, văn tốt. |
+| **Claude** | Trả phí theo lượt (vài trăm đến vài nghìn đồng một kịch bản) | Lấy khoá tại console.anthropic.com. Văn hay nhất. Có thể chọn Opus (hay nhất), Sonnet hoặc Haiku (rẻ nhất). |
+
+Khoá API chỉ lưu trên máy (`%APPDATA%\VideoStudio\ai-settings.json`), ngoài thư mục dữ liệu, và trang web chỉ hiện 4 ký tự cuối. Kịch bản đã viết lưu ở `%USERPROFILE%\VideoStudio\scripts`.
+
+AI trên máy dùng cả card đồ hoạ, nên viết kịch bản, tạo giọng và chuyển chữ chạy lần lượt, không cùng lúc.
+
 ## Dựng video
 
 1. Tạo dự án, kéo thả các clip vào.
